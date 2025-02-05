@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>userdownload</title>
+    <!-- 添加样式表链接，用于显示图片和按钮样式 -->
+    <style>
+        img {
+            max-width: 100%;
+            height: auto;
+        }
+
+        .download-btn {
+            margin-top: 20px;
+            display: inline-block;
+            padding: 10px 20px;
+            background-color: #007BFF;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <% if (result_fileInfos && result_fileInfos.length> 0) { %>
+        <% for (let i=0; i < result_fileInfos.length; i++) { %>
+            <img src="data:<%= result_fileInfos[i].contentType %>;base64,<%= result_fileInfos[i].fileBase64 %>"
+                alt="Generated Image <%= i + 1 %>">
+            <% } %>
+                <% } %>
+
+                    <a class="download-btn" href="/upload">返回上传页面</a>
+
+</body>
+
+</html>

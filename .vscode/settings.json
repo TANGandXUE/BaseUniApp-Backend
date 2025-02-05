@@ -1,0 +1,5 @@
+{
+    "Lingma.cloudModelAutoTriggerGenerateLength": "short",
+    "Lingma.cloudModelAutoTriggerDisplayRule": true,
+    "Codegeex.CompletionDelay": 0.1
+}
