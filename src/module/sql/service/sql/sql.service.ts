@@ -13,9 +13,8 @@ import { UserAssetsService } from 'src/module/sql/service/user-assets/user-asset
 dotenv.config();
 
 const initUserAvatarUrl = process.env.INIT_USER_AVATAR_URL || 'https://clouddreamai.com/userLogo.jpg'
-const initUserPoints = Number(process.env.INIT_USER_POINTS || '100');
 const minPointsAfterDeduct = Number(process.env.MIN_POINTS_AFTER_DEDUCT || '0');
-
+const initUserPoints = Number(process.env.INIT_USER_POINTS || '100');
 @Injectable()
 export class SqlService {
 
@@ -75,18 +74,17 @@ export class SqlService {
         userInfo.userEmail = registerInfos.userEmail;
         // 初始值
         userInfo.userAvatarUrl = initUserAvatarUrl;
-        userInfo.userLevel = 0;
-        userInfo.userPoints = initUserPoints;
         userInfo.userRegisterDate = new Date();
         userInfo.userStatus = 'normal';
         userInfo.userUsedPoints = 0;
-        userInfo.userExpireDate = undefined;
         userInfo.userIsAdmin = false;
 
         const userInfoResult = await this.userInfoRepository.save(userInfo);
 
         // 初始化用户资产
         await this.userAssetsService.initUserAssets(userInfoResult.userId);
+        // 初始化用户积分
+        await this.userAssetsService.addPoints(userInfoResult.userId, initUserPoints, 10 * 365 * 86400 * 1000);
 
         console.log("注册成功: ", userInfoResult);
         return { isRegister: true, message: '注册成功' };
@@ -208,6 +206,7 @@ export class SqlService {
     async isPointsEnoughByUserId(userId: number, deductPoints: number) {
         // console.log('userId: ', userId);
         let userToGet = await this.userInfoRepository.findOne({ where: { userId } });
+        let userPoints = await this.userAssetsService.getAvailablePoints(userId);
 
         // 检查用户是否存在
         if (!userToGet) {
@@ -222,56 +221,31 @@ export class SqlService {
         // console.log('最低点数: ', minPointsAfterDeduct);
         // console.log('计算结果: ', (userToGet.userPoints - deductPoints) < minPointsAfterDeduct);
 
-        if (userToGet.userPoints - deductPoints < minPointsAfterDeduct)
-            return { isSuccess: false, message: '点数不足', data: userToGet.userPoints }
+        if (userPoints - deductPoints < minPointsAfterDeduct)
+            return { isSuccess: false, message: '点数不足', data: userPoints }
         else {
-            return { isSuccess: true, message: '点数充足', data: userToGet.userPoints };
+            return { isSuccess: true, message: '点数充足', data: userPoints };
         }
 
     }
 
     // 扣除点数
-    async deductPoints(userPhone: string, userEmail: string, pointsToDeduct: number) {
-        let userToUpdate: any = {};
-
-        if (userPhone !== '')
-            userToUpdate = await this.userInfoRepository.findOne({ where: { userPhone } });
-        else if (userEmail !== '')
-            userToUpdate = await this.userInfoRepository.findOne({ where: { userEmail } });
-        else
-            return { isSuccess: false, message: '手机号和邮箱均为空' };
-
-        // 检查用户是否存在
-        if (!userToUpdate) {
-            console.log("用户不存在");
-            return { isSuccess: false, message: '用户不存在' };
-        }
-
+    async deductPoints(userId: number, pointsToDeduct: number) {
         // 扣除点数
-        if (userToUpdate.userPoints - pointsToDeduct >= minPointsAfterDeduct) {
-            userToUpdate.userPoints = userToUpdate.userPoints - pointsToDeduct;
-            userToUpdate.userUsedPoints = userToUpdate.userUsedPoints + pointsToDeduct;
-            await this.userInfoRepository.save(userToUpdate);
-            // console.log("扣点成功: ", userToUpdate);
-            return { isSuccess: true, message: '扣点成功', data: userToUpdate.userPoints };
-        } else {
-            return { isSuccess: false, message: '扣点失败，点数不足' };
-        }
-
+        const result = await this.userAssetsService.consumePoints(userId, pointsToDeduct);
+        // console.log("扣点成功: ", userToUpdate);
+        return { isSuccess: true, message: '扣点成功', data: result };
     }
 
     // 包含检测用户是否点数足够的扣除点数
     async deductPointsWithCheck(user: {
         userId: number;
-        userPhone: string;
-        userEmail: string;
-        userPoints: number;
     }, pointsToDeduct: number) {
         try {
-            const isPointsEnough = await this.isPointsEnough(user.userPhone, user.userEmail, pointsToDeduct);
+            const isPointsEnough = await this.isPointsEnoughByUserId(user.userId, pointsToDeduct);
             if (isPointsEnough.isSuccess) {
                 try {
-                    return await this.deductPoints(user.userPhone, user.userEmail, pointsToDeduct);
+                    return await this.deductPoints(user.userId, pointsToDeduct);
                 } catch (error) {
                     console.error('扣除点数失败: ', error);
                     return { isSuccess: false, message: '扣除点数失败' };
@@ -284,32 +258,6 @@ export class SqlService {
             return { isSuccess: false, message: '扣除点数失败' };
         }
     }
-
-    // 增加点数
-    async addPoints(userPhone: string, userEmail: string, pointsToAdd: number) {
-        let userToUpdate: any = {};
-
-        if (userPhone !== '')
-            userToUpdate = await this.userInfoRepository.findOne({ where: { userPhone } });
-        else if (userEmail !== '')
-            userToUpdate = await this.userInfoRepository.findOne({ where: { userEmail } });
-        else
-            return { isSuccess: false, message: '手机号和邮箱均为空' };
-
-        // 检查用户是否存在
-        if (!userToUpdate) {
-            console.log("用户不存在");
-            return { isSuccess: false, message: '用户不存在' };
-        }
-
-        // 增加点数
-        userToUpdate.userPoints = userToUpdate.userPoints + pointsToAdd;
-        await this.userInfoRepository.save(userToUpdate);
-        console.log("点数充值成功: ", userToUpdate);
-        return { isSuccess: true, message: '点数充值成功', data: userToUpdate.userPoints };
-
-    }
-
 
     // 用户登录
     async validateUser(loginInfos: { userNameOrPhoneOrEmail: string, userPassword: string }): Promise<any> {

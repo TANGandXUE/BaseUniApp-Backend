@@ -4,6 +4,7 @@ import { JwtAuthGuard } from '../../others/jwt-auth.guard';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { OssService } from 'src/module/sql/service/oss/oss.service';
 import { UploadService } from '../../service/upload/upload.service';
+import { UserAssetsService } from 'src/module/sql/service/user-assets/user-assets.service';
 
 @Controller('settings')
 export class SettingsController {
@@ -11,6 +12,7 @@ export class SettingsController {
         private sqlService: SqlService,
         private ossService: OssService,
         private uploadService: UploadService,
+        private userAssetsService: UserAssetsService
     ) { }
 
     @Post('updateinfo')
@@ -80,14 +82,14 @@ export class SettingsController {
     @Post('deductpoints')
     @UseGuards(JwtAuthGuard)
     async deductPoints(@Req() req) {
-        return await this.sqlService.deductPoints(req.body.userPhone, req.body.userEmail, req.body.pointsToDeduct);
+        return await this.sqlService.deductPoints(req.body.userId, req.body.pointsToDeduct);
     }
 
     // 充值点数
     @Post('addpoints')
     @UseGuards(JwtAuthGuard)
     async addPoints(@Req() req) {
-        return await this.sqlService.addPoints(req.body.userPhone, req.body.userEmail, req.body.pointsToAdd);
+        return await this.userAssetsService.addPoints(req.body.userId, req.body.pointsToAdd, -1);
     }
 }
 

@@ -12,8 +12,6 @@ import { PayService } from './service/pay/pay.service';
 import { Pay } from 'src/entities/pay/pay.entity';
 import { UserInfo } from 'src/entities/userinfo.entity';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { ProcessService } from './service/process/process.service';
-import { ProcessController } from './controller/process/process.controller';
 import { WorkInfo } from 'src/entities/workinfo.entity';
 import { ParamsInfo } from 'src/entities/params.entity';
 import { UserAssetsService } from 'src/module/sql/service/user-assets/user-assets.service';
@@ -36,8 +34,8 @@ import { UserPremiumFeature } from 'src/entities/userAssets/userPremiumFeature.e
       UserPremiumFeature
     ])
   ],
-  controllers: [ApiController, PayController, ProcessController],
-  providers: [UploadService, IsimgService, DatatransService, MeituautoService, ChatqwenService, AlimsgService, PayService, ProcessService, UserAssetsService],
+  controllers: [ApiController, PayController],
+  providers: [UploadService, IsimgService, DatatransService, MeituautoService, ChatqwenService, AlimsgService, PayService, UserAssetsService],
   exports: [UploadService, ChatqwenService, MeituautoService, AlimsgService],
 })
 export class ApiModule {}

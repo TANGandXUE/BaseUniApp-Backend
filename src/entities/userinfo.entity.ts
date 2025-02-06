@@ -15,10 +15,6 @@ export class UserInfo {
   @Column({ type: "varchar" })
   userPassword: string;
 
-  //用户积分
-  @Column({ type: "int" })
-  userPoints: number;
-
   //用户注册手机号
   @Column({ type: "varchar" })
   userPhone: string;
@@ -30,14 +26,6 @@ export class UserInfo {
   //用户状态
   @Column({ type: "varchar" })
   userStatus: string;
-
-  //用户会员等级
-  @Column({ type: "int" })
-  userLevel: number;
-
-  //用户会员到期时间
-  @CreateDateColumn({ type: "timestamp" })
-  userExpireDate: Date;
 
   //用户已用积分
   @Column({ type: "int" })

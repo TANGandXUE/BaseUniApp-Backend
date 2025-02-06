@@ -102,8 +102,9 @@ export class UserAssetsService {
   async getAvailablePoints(userId: number): Promise<number> {
     const points = await this.pointsRepo
       .createQueryBuilder('p')
+      .leftJoin('p.user', 'userAssets')
       .select('SUM(p.userPointsAmount)', 'total')
-      .where('p.userId = :userId', { userId })
+      .where('userAssets.userId = :userId', { userId })
       .andWhere('p.userPointsExpireDate > NOW()')
       .getRawOne();
 
@@ -128,19 +129,19 @@ export class UserAssetsService {
       const now = Date.now();
       // 定义TIMESTAMP上限: 2038-01-19T03:14:07.000Z
       const MAX_TIMESTAMP = new Date(2147483647 * 1000);
-      
+
       // 处理当前等级
       const existing = await manager.findOne(UserMembership, {
         where: { user: { userId }, userMembershipLevel: level }
       });
-  
+
       // 计算新到期时间
       const baseTime = existing?.userMembershipExpireDate.getTime() || now;
       let newExpiry = new Date(baseTime + durationMs);
       if (newExpiry.getTime() > MAX_TIMESTAMP.getTime()) {
         newExpiry = MAX_TIMESTAMP;
       }
-      
+
       if (existing) {
         existing.userMembershipExpireDate = newExpiry;
         await manager.save(existing);
@@ -152,7 +153,7 @@ export class UserAssetsService {
         });
         await manager.save(newRecord);
       }
-  
+
       // 获取需要延长的低等级有效会员
       const validLowerLevels = await manager.find(UserMembership, {
         where: {
@@ -161,7 +162,7 @@ export class UserAssetsService {
           userMembershipExpireDate: MoreThan(new Date()) // 只处理未过期的
         }
       });
-  
+
       // 延长有效低等级会员
       for (const record of validLowerLevels) {
         let lowerNewExpiry = new Date(record.userMembershipExpireDate.getTime() + durationMs);
@@ -171,9 +172,33 @@ export class UserAssetsService {
         record.userMembershipExpireDate = lowerNewExpiry;
         await manager.save(record);
       }
-  
+
       return manager.find(UserMembership, { where: { user: { userId } } });
     });
+  }
+
+  // 查询会员等级
+  async getMembershipLevels(userId: number): Promise<Array<{
+    userMembershipLevel: number;
+    userMembershipExpireDate: Date;
+  }>> {
+    return await this.membershipRepo.find({
+      where: { user: { userId } },
+      select: ['userMembershipLevel', 'userMembershipExpireDate'],
+      order: { userMembershipExpireDate: 'DESC' }
+    });
+
+  }
+
+  // 清除过期会员
+  async clearExpiredMemberships(): Promise<number> {
+    const result = await this.membershipRepo
+      .createQueryBuilder()
+      .delete()
+      .where('userMembershipExpireDate <= NOW()')
+      .execute();
+
+    return result.affected || 0;
   }
 
   // 添加高级功能
@@ -229,6 +254,29 @@ export class UserAssetsService {
 
       return manager.save(feature);
     });
+  }
+
+  // 查询高级功能
+  async getPremiumFeatures(userId: number): Promise<Array<{
+    userPremiumFeatureName: string;
+    userPremiumFeatureExpireDate: Date;
+  }>> {
+    return await this.featureRepo.find({
+      where: { user: { userId } },
+      select: ['userPremiumFeatureName', 'userPremiumFeatureExpireDate'],
+      order: { userPremiumFeatureExpireDate: 'DESC' }
+    });
+  }
+
+  // 清除过期高级功能
+  async clearExpiredPremiumFeatures(): Promise<number> {
+    const result = await this.featureRepo
+      .createQueryBuilder()
+      .delete()
+      .where('userPremiumFeatureExpireDate <= NOW()')
+      .execute();
+
+    return result.affected || 0;
   }
 
   // 延长高级功能到期时间

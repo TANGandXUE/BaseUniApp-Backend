@@ -24,12 +24,13 @@ import { UserAssets } from 'src/entities/userAssets/userAssets.entity';
 import { UserMembership } from 'src/entities/userAssets/userMembership.entity';
 import { UserPoints } from 'src/entities/userAssets/userPoints.entity';
 import { UserPremiumFeature } from 'src/entities/userAssets/userPremiumFeature.entity';
+import { UserAssetsController } from './controller/user-assets/user-assets.controller';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([HistoryInfo, UserUpload, UserInfo, Pay, Feedback, ShopItems, UserAssets, UserMembership, UserPoints, UserPremiumFeature])
   ],
-  controllers: [HistoryController, OssController, AdminController, BosController, ShopController],
+  controllers: [HistoryController, OssController, AdminController, BosController, ShopController, UserAssetsController],
   providers: [HistoryService, SqlService, OssService, DatatransService, JwtService, AdminService, BosService, UserAssetsService],
   exports: [SqlService, HistoryService, OssService]
 })
