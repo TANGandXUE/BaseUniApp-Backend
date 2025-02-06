@@ -1,11 +1,18 @@
-import { Entity, Column, CreateDateColumn, PrimaryColumn, UpdateDateColumn } from 'typeorm';
+import { Entity, Column, CreateDateColumn, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+
+// 定义商品内容类型
+export interface ShopItemContent {
+    type: string;
+    value: number;
+    expirationTime: number;
+}
 
 @Entity()
 export class ShopItems {
 
     //商品ID
-    @PrimaryColumn()
-    shopItemId: string;
+    @PrimaryGeneratedColumn()
+    shopItemId: number;
 
     //商品名称
     @Column({ type: "varchar" })
@@ -17,11 +24,11 @@ export class ShopItems {
 
     //商品描述
     @Column({ type: "json" })
-    shopItemDescription: object;
+    shopItemDescription: object[];
 
     //商品内容
     @Column({ type: "json" })
-    shopItemContent: object;
+    shopItemContent: ShopItemContent[];  // 使用具体类型替代object[]
 
     //商品图片URL
     @Column({ type: "varchar" })
@@ -43,7 +50,7 @@ export class ShopItems {
     @UpdateDateColumn({ type: "timestamp" })
     shopItemUpdateTime: Date;
 
-    //商品库存
+    //商品库存（-1为无限）
     @Column({ type: "int" })
     shopItemStock: number;
 

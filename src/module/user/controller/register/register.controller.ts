@@ -23,16 +23,18 @@ export class RegisterController {
     // http://localhost:3000/user/register/post
     @Post('post')
     // 使用了中间件处理参数，代码重构时应改成守卫
-    register(@Req() req) {
+    async register(@Req() req) {
         const registerParams = {
             userName: req.body.userName,
             userPassword: req.body.userPassword,
             userPhone: req.body.userPhone,
             userEmail: req.body.userEmail,
         }
+        console.log("registerParams: ", registerParams);
 
-        return this.sqlService.register(registerParams);
-        // console.log(registerParams);
+        const result = await this.sqlService.register(registerParams);
+        console.log("result: ", result);
+        return result;
     }
 
     @Post('getcode')

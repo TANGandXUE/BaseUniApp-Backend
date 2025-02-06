@@ -10,10 +10,10 @@ export class PayController {
 
     @Post('start')
     @UseGuards(JwtAuthGuard)
-    async startPayment(@Req() req): Promise<any> {
+    async startPayment(@Req() req: any): Promise<any> {
         console.log(req.body.payMethod);
         const responseData = await this.payService.startPayment(
-            req.body.itemName,
+            req.body.shopItemId,
             req.body.payMethod,
             req.body.deviceType,
             req.user.userId,
@@ -23,9 +23,10 @@ export class PayController {
     }
 
     @Get('notify') // 异步通知的路由，通常由支付平台发起GET请求
-    async handlePaymentNotification(@Req() request, @Res() response): Promise<any> {
+    async handlePaymentNotification(@Req() request: any, @Res() response: any): Promise<any> {
         try {
             const notifyResult = await this.payService.handleNotification(request);
+            console.log('支付通知结果:', notifyResult);
             if (notifyResult === 'success') {
                 response.status(200).send(notifyResult); // 返回success给支付平台
             } else {
@@ -37,7 +38,7 @@ export class PayController {
     }
 
     @Post('query')
-    async queryPaymentStatus(@Req() req): Promise<any> {
+    async queryPaymentStatus(@Req() req: any): Promise<any> {
         return await this.payService.queryPaymentStatus(req.body.tradeId);
     }
 
@@ -45,7 +46,7 @@ export class PayController {
     // 根据JWT获取支付记录
     @UseGuards(JwtAuthGuard)
     @Get('syncinfos')
-    async syncInfos(@Req() req) {
+    async syncInfos(@Req() req: any) {
         // userId是必然不会变动的信息，所以用UseGuards来从JWT中取出，以从数据库中获取动态信息
         const payerId = req.user.userId;
         return await this.payService.getPayInfos(payerId);

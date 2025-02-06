@@ -14,18 +14,30 @@ import { JwtStrategy } from './others/jwt.strategy';
 import { LocalStrategy } from './others/local.strategy';
 import { ForgetpasswordMiddleware } from './middleware/forgetpassword.middleware';
 import { SettingsController } from './controller/settings/settings.controller';
+import { UserAssetsService } from 'src/module/sql/service/user-assets/user-assets.service';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { UserAssets } from 'src/entities/userAssets/userAssets.entity';
+import { UserPoints } from 'src/entities/userAssets/userPoints.entity';
+import { UserMembership } from 'src/entities/userAssets/userMembership.entity';
+import { UserPremiumFeature } from 'src/entities/userAssets/userPremiumFeature.entity';
 
 @Module({
   imports: [
     SqlModule,
     ApiModule,
+    TypeOrmModule.forFeature([
+      UserAssets,
+      UserPoints,
+      UserMembership,
+      UserPremiumFeature
+    ]),
     JwtModule.register({
       secret: jwtConstants.secret,
       signOptions: { expiresIn: '24h' },
     }),
   ],
   controllers: [UploadController, DownloadController, RegisterController, LoginController, SettingsController],
-  providers: [UploadService, DatatransService, LocalStrategy, JwtStrategy],
+  providers: [UploadService, DatatransService, LocalStrategy, JwtStrategy, UserAssetsService],
   exports: []
 })
 

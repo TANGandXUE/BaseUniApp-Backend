@@ -3,12 +3,13 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { UserUpload } from 'src/entities/userupload.entity';
 import { UserInfo } from 'src/entities/userinfo.entity';
-import { Pay } from 'src/entities/pay.entity';
+import { Pay } from 'src/entities/pay/pay.entity';
 import { Feedback } from 'src/entities/feedback.entity';
 import { JwtService } from '@nestjs/jwt';
 import { jwtConstants } from 'src/module/user/others/jwtconstants';
 import * as dotenv from 'dotenv';
 import { ShopItems } from 'src/entities/shopItems.entity';
+import { UserAssetsService } from 'src/module/sql/service/user-assets/user-assets.service';
 dotenv.config();
 
 const initUserAvatarUrl = process.env.INIT_USER_AVATAR_URL || 'https://clouddreamai.com/userLogo.jpg'
@@ -32,6 +33,7 @@ export class SqlService {
         private readonly shopItemsRepository: Repository<ShopItems>,
         // 注入相关服务
         private jwtService: JwtService,
+        private readonly userAssetsService: UserAssetsService
     ) { }
 
     uploadFiles(fileInfos: Array<{ fileName: string, filePath: string }>) {
@@ -55,7 +57,7 @@ export class SqlService {
     }
 
     // 用户注册
-    register(
+    async register(
         registerInfos: {
             userName: string,
             userPassword: string,
@@ -81,10 +83,15 @@ export class SqlService {
         userInfo.userExpireDate = undefined;
         userInfo.userIsAdmin = false;
 
-        this.userInfoRepository.save(userInfo);
-        console.log("注册成功: ", userInfo);
+        const userInfoResult = await this.userInfoRepository.save(userInfo);
+
+        // 初始化用户资产
+        await this.userAssetsService.initUserAssets(userInfoResult.userId);
+
+        console.log("注册成功: ", userInfoResult);
         return { isRegister: true, message: '注册成功' };
     }
+
     // 查找用户信息是否存在
     async elementExist(fieldName: any, value: any) {
         // 根据提供的字段名和值查询用户信息
@@ -413,24 +420,73 @@ export class SqlService {
 
     // 添加商品
     async addShopItem(shopItem: ShopItems) {
-        return await this.shopItemsRepository.save(shopItem);
+
+        const result = await this.shopItemsRepository.save(shopItem);
+        if (result['shopItemId'])
+            return { isSuccess: true, message: '商品添加成功', data: result };
+        else
+            return { isSuccess: false, message: '连接商品数据库异常', data: {} };
     }
 
+    // 获取单个商品信息
+    async getSingleShopItem(shopItemId: number) {
+        const result = await this.shopItemsRepository.findOneBy({ shopItemId });
+        if (result)
+            return { isSuccess: true, message: '商品获取成功', data: result };
+        else
+            return { isSuccess: false, message: '商品获取失败', data: {} };
+    }
     // 获取所有商品信息
     async getShopItems() {
-        return await this.shopItemsRepository.find();
+        const result = await this.shopItemsRepository.find();
+        if (result.length > 0)
+            return { isSuccess: true, message: '所有商品获取成功', data: result };
+        else
+            return { isSuccess: false, message: '所有商品获取失败', data: {} };
     }
 
-    // 更新商品信息
-    async updateShopItem(shopItemId: number, shopItem: ShopItems) {
-        return await this.shopItemsRepository.update(shopItemId, shopItem);
+    // 更新商品信息（整合数据处理逻辑）
+    async updateShopItem(shopItemId: number, updateData: Partial<ShopItems>) {
+        // 1. 过滤非法字段
+        const { shopItemId: _, shopItemCreateTime: __, ...filteredData } = updateData;
+
+        // 2. 添加系统维护字段
+        const finalData = {
+            ...filteredData,
+            shopItemUpdateTime: new Date()
+        };
+
+        // 3. 执行更新操作
+        const result = await this.shopItemsRepository.update(shopItemId, finalData);
+
+        // 4. 返回更新结果
+        if (result.affected && result.affected > 0) {
+            return {
+                isSuccess: true,
+                message: '商品更新成功',
+                data: await this.shopItemsRepository.findOneBy({ shopItemId })
+            };
+        }
+        return { isSuccess: false, message: '商品更新失败', data: {} };
     }
 
     // 删除商品
     async deleteShopItem(shopItemId: number) {
-        return await this.shopItemsRepository.delete(shopItemId);
+        // 添加参数验证
+        if (!Number.isInteger(shopItemId) || shopItemId <= 0) {
+            return { isSuccess: false, message: '无效的商品ID', data: {} };
+        }
+
+        // 使用更安全的删除方式
+        const result = await this.shopItemsRepository.delete({ shopItemId });
+
+        // 使用更标准的affected判断方式
+        if (result.affected && result.affected > 0)
+            return { isSuccess: true, message: '商品删除成功', data: result };
+        else
+            return { isSuccess: false, message: '商品删除失败', data: {} };
     }
-    
+
 
 }
 

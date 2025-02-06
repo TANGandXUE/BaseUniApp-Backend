@@ -3,12 +3,16 @@ import { SqlService } from 'src/module/sql/service/sql/sql.service';
 import { LoginAuthGuard } from '../../others/auth.guard';
 import { JwtAuthGuard } from '../../others/jwt-auth.guard';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { UserAssetsService } from 'src/module/sql/service/user-assets/user-assets.service';
 
 @Controller('/user/login')
 @ApiTags('用户登陆相关')
 export class LoginController {
 
-    constructor(private readonly sqlService: SqlService) { }
+    constructor(
+        private readonly sqlService: SqlService,
+        private readonly userAssetsService: UserAssetsService
+    ) { }
 
     //默认方法
     @Get()
@@ -16,18 +20,6 @@ export class LoginController {
     @Render('user/login')
     hello() {
     }
-
-    // // 旧版方法
-    // @Post('abandoned')
-    // loginAbandonded(@Req() req) {
-    //     const loginParams = {
-    //         userNameOrPhoneOrEmail: req.body.userNameOrPhoneOrEmail,
-    //         userPassword: req.body.userPassword,
-    //     }
-
-    //     this.sqlService.validateUser(loginParams);
-    //     // console.log(loginParams);
-    // }
 
 
     // 登陆，并获取包含全部payload(userInfo数据库中的所有属性)的JWT
@@ -37,6 +29,9 @@ export class LoginController {
     @ApiOperation({ summary: '用户登陆' })
     @Post()
     async login(@Request() req) {
+        // 检查并初始化用户资产
+        await this.userAssetsService.initUserAssets(req.user.userId);
+        
         //经过LoginAuthGuard调用的auth.strategy.ts后，req中新增了user，并存储了用户信息
         // console.log(' 登录成功', req.user)
         return this.sqlService.login(req.user);

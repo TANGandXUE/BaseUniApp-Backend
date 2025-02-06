@@ -19,17 +19,28 @@ export class Pay {
     @CreateDateColumn({ type: "timestamp" })
     payerPayDate: Date;
 
-    //付款者增加点数
-    @Column({ type: "int" })
-    payerAddPoints: number;
+    //获得积分
+    @Column({ type: "int", nullable: true })
+    pointsAmount: number;
 
-    //付款者会员延长时间(天数)
-    @Column({ type: "int" })
-    payerAddExpireDate: number;
+    //积分过期时间
+    @Column({ type: "bigint", nullable: true })
+    pointsExpireInMs: number;
 
-    //付款者会员等级增加
-    @Column({ type: "int" })
-    payerAddLevel: number;
+    //会员等级
+    @Column({ type: "int", nullable: true })
+    membershipLevel: number;
+
+    //会员过期时间
+    @Column({ type: "bigint", nullable: true })
+    membershipExpireInMs: number;
+
+    //高级功能
+    @Column({ type: 'json', nullable: true })
+    premiumFeatures: Array<{
+        featureName: string;
+        durationMs: number;
+    }>;
 
     //付款者相关权益是否已实际添加到用户信息中
     //前端会来查询这个值，来判断是否支付成功

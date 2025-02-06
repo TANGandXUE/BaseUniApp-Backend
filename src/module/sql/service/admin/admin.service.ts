@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { UserInfo } from 'src/entities/userinfo.entity';
 import { Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Pay } from 'src/entities/pay.entity';
+import { Pay } from 'src/entities/pay/pay.entity';
 import { HistoryInfo } from 'src/entities/historyInfo.entity';
 
 @Injectable()

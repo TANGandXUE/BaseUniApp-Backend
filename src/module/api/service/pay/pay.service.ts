@@ -5,10 +5,27 @@ import axios from 'axios';
 import * as crypto from 'crypto';
 import * as dotenv from 'dotenv';
 dotenv.config();
-import { Pay } from 'src/entities/pay.entity';
+import { Pay } from 'src/entities/pay/pay.entity';
 import { UserInfo } from 'src/entities/userinfo.entity';
-import { getGoodList } from 'src/others/goodList';
 import { Repository } from 'typeorm';
+import { SqlService } from 'src/module/sql/service/sql/sql.service';
+import { ShopItemContent, ShopItems } from 'src/entities/shopItems.entity';
+import { UserAssetsService } from 'src/module/sql/service/user-assets/user-assets.service';
+
+interface PaymentAssets {
+    points?: {
+        amount: number;
+        durationMs: number;
+    };
+    membership?: {
+        level: number;
+        durationMs: number;
+    };
+    features: Array<{
+        name: string;
+        durationMs: number;
+    }>;
+}
 
 @Injectable()
 export class PayService {
@@ -18,13 +35,16 @@ export class PayService {
         private readonly payRepository: Repository<Pay>,
         @InjectRepository(UserInfo)
         private readonly userInfoRepository: Repository<UserInfo>,
+        // 注入服务
+        private readonly sqlService: SqlService,
+        private readonly userAssetsService: UserAssetsService
     ) { }
 
 
     private apiUrl = process.env.PAY_BASE_URL;
     private apiKey = process.env.PAY_API_KEY;
 
-
+    private paymentAssets: PaymentAssets = { features: [] };
 
     // 初始化订单参数
     private data: any = {
@@ -40,7 +60,7 @@ export class PayService {
     };
     private userId = 1;
     private addPoints = 0;
-    private addExpireDate = null;
+    private addExpireDate = 0;
     private addLevel = 0;
     private price = 0;
 
@@ -58,21 +78,28 @@ export class PayService {
         return `${datePart}${randomPart}`;
     }
 
-    public async startPayment(itemName: string, payMethod: string, deviceType: string, userId: number): Promise<any> {
+    public async startPayment(shopItemId: number, payMethod: string, deviceType: string, userId: number): Promise<any> {
+        // 解析商品内容
+        const responseData: any = await this.sqlService.getSingleShopItem(shopItemId);
+        if (!responseData.isSuccess) throw new Error('商品获取失败');
 
         // 根据名称查询商品相关参数
-        const { goodName, goodPrice, goodAddPoints, goodAddExpireDate, goodAddLevel } = getGoodList(itemName);
+        const { data: shopItemData, isSuccess } = await this.sqlService.getSingleShopItem(shopItemId);
+        if (!shopItemData || !isSuccess) {
+            throw new Error('商品信息获取失败');
+        }
+
+        // 使用类型断言确保类型安全
+        const { shopItemName, shopItemPrice } = shopItemData as ShopItems;
 
         // 传入订单参数 to 数据库
         this.userId = userId;
-        this.addPoints = goodAddPoints;
-        if (goodAddExpireDate != null) this.addExpireDate = goodAddExpireDate;
-        this.addLevel = goodAddLevel;
-        this.price = goodPrice;
+        this.price = shopItemPrice;
+        this.paymentAssets = this.parseShopContent(responseData.data.shopItemContent);
 
         // 传入订单参数 to Snapay
-        this.data.name = goodName;
-        this.data.money = goodPrice;
+        this.data.name = shopItemName;
+        this.data.money = shopItemPrice;
         this.data.type = payMethod;
         this.data.device = deviceType;
         // 递归生成订单号，直至无重复为止
@@ -124,11 +151,6 @@ export class PayService {
 
     // 处理支付结果
     public async handleNotification(req: any): Promise<string> {
-        // // 验证签名逻辑类似initiatePayment中的签名生成，但需基于接收到的请求参数
-        // const sortedParams = Object.keys(req.query)
-        //     .sort()
-        //     .filter(key => key !== 'sign' && key !== 'sign_type' && req.query[key] !== '')
-        //     .reduce((acc, key) => `${acc}${key}=${req.query[key]}&`, '');
         const receivedSign = req.query.sign;
         delete req.query.sign;
         delete req.query.sign_type;
@@ -137,46 +159,58 @@ export class PayService {
         console.log('处理支付结果执行到了');
 
         if (receivedSign === calculatedSign) {
+            // 创建支付记录
+            const payInfo = this.payRepository.create({
+                payerTradeId: this.data.out_trade_no,
+                payerId: this.userId,
+                payerPayAmount: this.price,
+                pointsAmount: this.paymentAssets.points?.amount,
+                pointsExpireInMs: this.paymentAssets.points?.durationMs,
+                membershipLevel: this.paymentAssets.membership?.level,
+                membershipExpireInMs: this.paymentAssets.membership?.durationMs,
+                premiumFeatures: this.paymentAssets.features,
+                payerHasAdded: false
+            });
 
-            // 支付结果 => 支付数据库
-            const payInfo = new Pay();
-            payInfo.payerTradeId = this.data.out_trade_no;
-            payInfo.payerId = this.userId;
-            payInfo.payerPayDate = new Date();
-            payInfo.payerAddPoints = this.addPoints;
-            payInfo.payerAddExpireDate = this.addExpireDate;
-            payInfo.payerAddLevel = this.addLevel;
-            payInfo.payerPayAmount = this.price;
-            payInfo.payerHasAdded = true;
-            console.log("payInfo为: ", payInfo);
-            this.payRepository.save(payInfo);
+            try {
+                await this.payRepository.save(payInfo);
 
-            // 购买的权益 => 用户信息数据库
-            const userInfo = await this.userInfoRepository.findOne({ where: { userId: this.userId } });
-            console.log("userPoints: ", userInfo.userPoints);
-            // console.log("addPoints: ", this.addPoints);
-            // console.log("userLevel: ", userInfo.userLevel);
-            // console.log("addLevel: ", this.addLevel);
-            userInfo.userPoints = userInfo.userPoints + this.addPoints;
-            // 会员等级相关参数
-            if (this.addLevel === 2)
-                userInfo.userLevel = this.addLevel;
-            else if (this.addLevel < 2 && userInfo.userExpireDate > new Date())
-                userInfo.userLevel = 2;
-            else if (this.addLevel < 2 && userInfo.userExpireDate <= new Date())
-                userInfo.userLevel = 1;
-            else
-                userInfo.userLevel = userInfo.userLevel;
-            // 会员有效期的相关参数
-            if (this.addExpireDate > 0) {
-                if (userInfo.userExpireDate < new Date())
-                    userInfo.userExpireDate.setDate(new Date().getDate() + this.addExpireDate);
-                else
-                    userInfo.userExpireDate.setDate(userInfo.userExpireDate.getDate() + this.addExpireDate);
+                // 添加用户资产
+                if (this.paymentAssets.points) {
+                    await this.userAssetsService.addPoints(
+                        this.userId,
+                        this.paymentAssets.points.amount,
+                        this.paymentAssets.points.durationMs
+                    );
+                }
+
+                if (this.paymentAssets.membership) {
+                    await this.userAssetsService.addMembership(
+                        this.userId,
+                        this.paymentAssets.membership.level,
+                        this.paymentAssets.membership.durationMs
+                    );
+                }
+
+                await Promise.all(
+                    this.paymentAssets.features.map(feature =>
+                        this.userAssetsService.addPremiumFeature(
+                            this.userId,
+                            feature.name,
+                            feature.durationMs
+                        )
+                    )
+                );
+
+                payInfo.payerHasAdded = true;
+                await this.payRepository.save(payInfo);
+
+            } catch (error) {
+                console.error('资产添加失败:', error);
+                payInfo.payerHasAdded = false;
+                await this.payRepository.save(payInfo);
+                return 'failure';
             }
-            console.log("userInfo为: ", userInfo);
-            this.userInfoRepository.save(userInfo);
-
 
             return 'success';
         } else {
@@ -210,5 +244,35 @@ export class PayService {
         payListToGet = await this.payRepository.find({ where: { payerId } });
         console.log("payListToGet: ", JSON.stringify(payListToGet[0]));
         return { isSuccess: true, message: '获取支付记录成功', data: payListToGet };
+    }
+
+    private parseShopContent(contents: ShopItemContent[]): PaymentAssets {
+        return contents.reduce((acc, item) => {
+            const durationMs = item.expirationTime === -1
+                ? 10 * 365 * 86400 * 1000
+                : item.expirationTime;
+
+            switch (item.type.toLowerCase()) {
+                case 'points':
+                    acc.points = {
+                        amount: Number(item.value),
+                        durationMs
+                    };
+                    break;
+                case 'vip':
+                    acc.membership = {
+                        level: Number(item.value),
+                        durationMs
+                    };
+                    break;
+                case 'function':
+                    acc.features.push({
+                        name: item.value.toString(),
+                        durationMs
+                    });
+                    break;
+            }
+            return acc;
+        }, { features: [] } as PaymentAssets);
     }
 }

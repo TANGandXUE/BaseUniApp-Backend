@@ -1,0 +1,274 @@
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, DataSource } from 'typeorm';
+import { UserAssets } from 'src/entities/userAssets/userAssets.entity';
+import { UserPoints } from 'src/entities/userAssets/userPoints.entity';
+import { UserMembership } from 'src/entities/userAssets/userMembership.entity';
+import { UserPremiumFeature } from 'src/entities/userAssets/userPremiumFeature.entity';
+import { MoreThan, LessThan } from 'typeorm';
+
+@Injectable()
+export class UserAssetsService {
+  constructor(
+    private dataSource: DataSource,
+    @InjectRepository(UserAssets)
+    private userAssetsRepo: Repository<UserAssets>,
+    @InjectRepository(UserPoints)
+    private pointsRepo: Repository<UserPoints>,
+    @InjectRepository(UserMembership)
+    private membershipRepo: Repository<UserMembership>,
+    @InjectRepository(UserPremiumFeature)
+    private featureRepo: Repository<UserPremiumFeature>,
+  ) { }
+
+  // 初始化用户资产
+  async initUserAssets(userId: number): Promise<UserAssets> {
+    const exists = await this.userAssetsRepo.findOneBy({ userId });
+    if (exists) {
+      console.log("用户资产已存在: ", exists);
+      return exists;
+    }
+
+    const assets = this.userAssetsRepo.create({ userId });
+    const result = await this.userAssetsRepo.save(assets);
+    console.log("用户资产初始化成功: ", result);
+    return result;
+  }
+
+  // 获取完整资产信息
+  async getFullAssets(userId: number): Promise<UserAssets> {
+    const assets = await this.userAssetsRepo.findOne({
+      where: { userId },
+      relations: [
+        'userPoints',
+        'userMemberships',
+        'userPremiumFeatures'
+      ]
+    });
+
+    if (!assets) throw new NotFoundException('用户资产不存在');
+    return assets;
+  }
+
+  // 添加积分
+  async addPoints(userId: number, amount: number, durationMs: number): Promise<UserPoints> {
+    const assets = await this.getUserAssets(userId);
+    const expireDate = new Date(Date.now() + durationMs);
+
+    const points = this.pointsRepo.create({
+      userPointsAmount: amount,
+      userPointsExpireDate: expireDate,
+      user: assets
+    });
+
+    return this.pointsRepo.save(points);
+  }
+
+  // 消费积分
+  async consumePoints(userId: number, amount: number): Promise<void> {
+    return this.dataSource.transaction(async manager => {
+      // 查询条件增加过期时间检查
+      const points = await manager.find(UserPoints, {
+        where: {
+          user: { userId },
+          userPointsExpireDate: MoreThan(new Date()) // 明确过滤过期
+        },
+        order: { userPointsExpireDate: 'ASC' }
+      });
+
+      // 计算总可用积分
+      const total = points.reduce((sum, p) => sum + p.userPointsAmount, 0);
+      if (total < amount) throw new Error('积分不足');
+
+      // 按顺序扣除
+      let remaining = amount;
+      for (const p of points) {
+        const deduct = Math.min(p.userPointsAmount, remaining);
+        p.userPointsAmount -= deduct;
+        remaining -= deduct;
+
+        if (p.userPointsAmount === 0) {
+          await manager.remove(p); // 完全扣除后删除记录
+        } else {
+          await manager.save(p); // 部分扣除后更新记录
+        }
+
+        if (remaining === 0) break;
+      }
+    });
+  }
+
+  // 查询积分
+  async getAvailablePoints(userId: number): Promise<number> {
+    const points = await this.pointsRepo
+      .createQueryBuilder('p')
+      .select('SUM(p.userPointsAmount)', 'total')
+      .where('p.userId = :userId', { userId })
+      .andWhere('p.userPointsExpireDate > NOW()')
+      .getRawOne();
+
+    return parseInt(points?.total || '0', 10);
+  }
+
+  // 清除过期积分
+  async clearExpiredPoints(): Promise<number> {
+    const result = await this.pointsRepo
+      .createQueryBuilder()
+      .delete()
+      .where('userPointsExpireDate <= NOW()')
+      .execute();
+
+    return result.affected || 0;
+  }
+
+  // 添加会员等级
+  async addMembership(userId: number, level: number, durationMs: number): Promise<UserMembership[]> {
+    return this.dataSource.transaction(async manager => {
+      const assets = await this.getUserAssets(userId);
+      const now = Date.now();
+      // 定义TIMESTAMP上限: 2038-01-19T03:14:07.000Z
+      const MAX_TIMESTAMP = new Date(2147483647 * 1000);
+      
+      // 处理当前等级
+      const existing = await manager.findOne(UserMembership, {
+        where: { user: { userId }, userMembershipLevel: level }
+      });
+  
+      // 计算新到期时间
+      const baseTime = existing?.userMembershipExpireDate.getTime() || now;
+      let newExpiry = new Date(baseTime + durationMs);
+      if (newExpiry.getTime() > MAX_TIMESTAMP.getTime()) {
+        newExpiry = MAX_TIMESTAMP;
+      }
+      
+      if (existing) {
+        existing.userMembershipExpireDate = newExpiry;
+        await manager.save(existing);
+      } else {
+        const newRecord = manager.create(UserMembership, {
+          userMembershipLevel: level,
+          userMembershipExpireDate: newExpiry,
+          user: assets
+        });
+        await manager.save(newRecord);
+      }
+  
+      // 获取需要延长的低等级有效会员
+      const validLowerLevels = await manager.find(UserMembership, {
+        where: {
+          user: { userId },
+          userMembershipLevel: LessThan(level),
+          userMembershipExpireDate: MoreThan(new Date()) // 只处理未过期的
+        }
+      });
+  
+      // 延长有效低等级会员
+      for (const record of validLowerLevels) {
+        let lowerNewExpiry = new Date(record.userMembershipExpireDate.getTime() + durationMs);
+        if (lowerNewExpiry.getTime() > MAX_TIMESTAMP.getTime()) {
+          lowerNewExpiry = MAX_TIMESTAMP;
+        }
+        record.userMembershipExpireDate = lowerNewExpiry;
+        await manager.save(record);
+      }
+  
+      return manager.find(UserMembership, { where: { user: { userId } } });
+    });
+  }
+
+  // 添加高级功能
+  async addPremiumFeature(userId: number, featureName: string, durationMs: number): Promise<UserPremiumFeature> {
+    return this.dataSource.transaction(async manager => {
+      const assets = await this.getUserAssets(userId);
+      const now = new Date();
+
+      // 查找最新同名功能记录（包含过期）
+      const existing = await manager.findOne(UserPremiumFeature, {
+        where: {
+          user: { userId },
+          userPremiumFeatureName: featureName
+        },
+        order: { userPremiumFeatureExpireDate: 'DESC' }
+      });
+
+      let newExpiry: Date;
+      // 定义TIMESTAMP上限: 2038-01-19T03:14:07.000Z
+      const MAX_TIMESTAMP = new Date(2147483647 * 1000);
+
+      if (existing) {
+        // 判断是否过期
+        if (existing.userPremiumFeatureExpireDate > now) {
+          // 未过期：延长有效期
+          newExpiry = new Date(existing.userPremiumFeatureExpireDate.getTime() + durationMs);
+          console.log('durationMs: ', durationMs);
+          console.log("未过期，延长有效期: ", newExpiry);
+        } else {
+          // 已过期：重置有效期
+          newExpiry = new Date(now.getTime() + durationMs);
+        }
+        // 检查是否超过MySQL TIMESTAMP上限
+        if (newExpiry.getTime() > MAX_TIMESTAMP.getTime()) {
+          newExpiry = MAX_TIMESTAMP;
+        }
+        // 更新现有记录
+        existing.userPremiumFeatureExpireDate = newExpiry;
+        return manager.save(existing);
+      }
+
+      // 如果没有现有记录，创建新记录
+      newExpiry = new Date(now.getTime() + durationMs);
+      // 检查是否超过MySQL TIMESTAMP上限
+      if (newExpiry.getTime() > MAX_TIMESTAMP.getTime()) {
+        newExpiry = MAX_TIMESTAMP;
+      }
+      const feature = manager.create(UserPremiumFeature, {
+        userPremiumFeatureName: featureName,
+        userPremiumFeatureExpireDate: newExpiry,
+        user: assets
+      });
+
+      return manager.save(feature);
+    });
+  }
+
+  // 延长高级功能到期时间
+  async extendFeatureExpiry(userId: number, featureId: number, durationMs: number): Promise<UserPremiumFeature> {
+    const feature = await this.featureRepo.findOne({
+      where: { userPremiumFeatureId: featureId, user: { userId } }
+    });
+
+    if (!feature) throw new NotFoundException('功能记录不存在');
+
+    const newExpiry = new Date(feature.userPremiumFeatureExpireDate.getTime() + durationMs);
+    feature.userPremiumFeatureExpireDate = newExpiry;
+
+    return this.featureRepo.save(feature);
+  }
+
+  // 删除记录
+  async removeRecord(
+    repo: 'points' | 'membership' | 'feature',
+    userId: number,
+    recordId: number
+  ): Promise<void> {
+    const repositories = {
+      points: this.pointsRepo,
+      membership: this.membershipRepo,
+      feature: this.featureRepo
+    };
+
+    const result = await repositories[repo].delete({
+      [`user${repo.charAt(0).toUpperCase() + repo.slice(1)}Id`]: recordId,
+      user: { userId }
+    });
+
+    if (result.affected === 0) throw new NotFoundException('记录不存在');
+  }
+
+  // 内部方法：获取资产
+  private async getUserAssets(userId: number): Promise<UserAssets> {
+    let assets = await this.userAssetsRepo.findOneBy({ userId });
+    if (!assets) assets = await this.initUserAssets(userId);
+    return assets;
+  }
+}
