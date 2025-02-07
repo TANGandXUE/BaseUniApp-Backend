@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
+import { Repository, DataSource, EntityManager } from 'typeorm';
 import { UserAssets } from 'src/entities/userAssets/userAssets.entity';
 import { UserPoints } from 'src/entities/userAssets/userPoints.entity';
 import { UserMembership } from 'src/entities/userAssets/userMembership.entity';
@@ -177,17 +177,31 @@ export class UserAssetsService {
     });
   }
 
-  // 查询会员等级
+  // 查询会员等级（完整，未过期）
   async getMembershipLevels(userId: number): Promise<Array<{
     userMembershipLevel: number;
     userMembershipExpireDate: Date;
   }>> {
-    return await this.membershipRepo.find({
-      where: { user: { userId } },
+    return this.membershipRepo.find({
+      where: {
+        user: { userId },
+        userMembershipExpireDate: MoreThan(new Date())
+      },
       select: ['userMembershipLevel', 'userMembershipExpireDate'],
       order: { userMembershipExpireDate: 'DESC' }
     });
+  }
 
+  // 查询当前有效的最高会员等级
+  async getCurrentMembershipLevel(userId: number): Promise<number> {
+    const membership = await this.membershipRepo.findOne({
+      where: { 
+        user: { userId }, 
+        userMembershipExpireDate: MoreThan(new Date()) 
+      },
+      order: { userMembershipLevel: 'DESC' }
+    });
+    return membership?.userMembershipLevel || 0;
   }
 
   // 清除过期会员
@@ -318,5 +332,85 @@ export class UserAssetsService {
     let assets = await this.userAssetsRepo.findOneBy({ userId });
     if (!assets) assets = await this.initUserAssets(userId);
     return assets;
+  }
+
+  // 新增批量更新方法
+  async updateAssets(
+    userId: number,
+    assetsData: {
+      points?: UserPoints[];
+      memberships?: UserMembership[];
+      features?: UserPremiumFeature[];
+    }
+  ): Promise<void> {
+    return this.dataSource.transaction(async manager => {
+      // 更新积分
+      if (assetsData.points) {
+        await this.updatePoints(manager, userId, assetsData.points);
+      }
+      
+      // 更新会员等级
+      if (assetsData.memberships) {
+        await this.updateMemberships(manager, userId, assetsData.memberships);
+      }
+      
+      // 更新高级功能
+      if (assetsData.features) {
+        await this.updateFeatures(manager, userId, assetsData.features);
+      }
+    });
+  }
+
+  // 私有方法：更新积分
+  private async updatePoints(
+    manager: EntityManager,
+    userId: number,
+    points: UserPoints[]
+  ) {
+    // 删除旧记录
+    await manager.delete(UserPoints, { user: { userId } });
+    
+    // 插入新记录
+    const assets = await this.getUserAssets(userId);
+    const newPoints = points.map(p => manager.create(UserPoints, {
+      ...p,
+      user: assets
+    }));
+    
+    await manager.save(newPoints);
+  }
+
+  // 私有方法：更新会员等级（类似积分）
+  private async updateMemberships(
+    manager: EntityManager,
+    userId: number,
+    memberships: UserMembership[]
+  ) {
+    await manager.delete(UserMembership, { user: { userId } });
+    
+    const assets = await this.getUserAssets(userId);
+    const newMemberships = memberships.map(m => manager.create(UserMembership, {
+      ...m,
+      user: assets
+    }));
+    
+    await manager.save(newMemberships);
+  }
+
+  // 私有方法：更新高级功能（类似积分）
+  private async updateFeatures(
+    manager: EntityManager,
+    userId: number,
+    features: UserPremiumFeature[]
+  ) {
+    await manager.delete(UserPremiumFeature, { user: { userId } });
+    
+    const assets = await this.getUserAssets(userId);
+    const newFeatures = features.map(f => manager.create(UserPremiumFeature, {
+      ...f,
+      user: assets
+    }));
+    
+    await manager.save(newFeatures);
   }
 }

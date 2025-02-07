@@ -1,4 +1,5 @@
-import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn } from 'typeorm';
+import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, OneToOne, JoinColumn } from 'typeorm';
+import { UserAssets } from './userAssets/userAssets.entity';
 
 @Entity()
 export class UserInfo {
@@ -16,11 +17,11 @@ export class UserInfo {
   userPassword: string;
 
   //用户注册手机号
-  @Column({ type: "varchar" })
+  @Column({ type: "varchar", nullable: true })
   userPhone: string;
 
   //用户注册邮箱
-  @Column({ type: "varchar" })
+  @Column({ type: "varchar", nullable: true })
   userEmail: string;
 
   //用户状态
@@ -28,7 +29,7 @@ export class UserInfo {
   userStatus: string;
 
   //用户已用积分
-  @Column({ type: "int" })
+  @Column({ type: "int", default: 0 })
   userUsedPoints: number;
 
   //用户注册时间
@@ -36,10 +37,14 @@ export class UserInfo {
   userRegisterDate: Date;
 
   //用户头像URL
-  @Column({ type: "varchar" })
+  @Column({ type: "varchar", nullable: true })
   userAvatarUrl: string;
 
   //用户是否是管理员
-  @Column({ type: "boolean" })
+  @Column({ type: "boolean", default: false })
   userIsAdmin: boolean;
+
+  @OneToOne(() => UserAssets)
+  @JoinColumn({ name: 'userId' })
+  assets: UserAssets;
 }

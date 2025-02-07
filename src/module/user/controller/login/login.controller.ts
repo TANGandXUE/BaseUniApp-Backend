@@ -21,7 +21,6 @@ export class LoginController {
     hello() {
     }
 
-
     // 登陆，并获取包含全部payload(userInfo数据库中的所有属性)的JWT
     // 如果数据库对象有更新，必须要去sql.service.ts和jwt.strategy.ts中往payload中新增对应的key，
     // 并前往sql.service.ts中的register方法中新增对应的属性
@@ -31,29 +30,18 @@ export class LoginController {
     async login(@Request() req) {
         // 检查并初始化用户资产
         await this.userAssetsService.initUserAssets(req.user.userId);
-        
+
         //经过LoginAuthGuard调用的auth.strategy.ts后，req中新增了user，并存储了用户信息
         // console.log(' 登录成功', req.user)
         return this.sqlService.login(req.user);
     }
 
-
-    // 旧版，根据JWT获取用户信息
-    @UseGuards(JwtAuthGuard)
-    @Get('userinfo')
-    getProfile(@Request() req) {
-        return req.user;
-    }
-
-    // 新版，根据JWT获取用户信息
+    // 新版，根据JWT获取用户凭证，并从数据库中获取动态信息
     @UseGuards(JwtAuthGuard)
     @Get('syncinfos')
     async syncInfos(@Request() req) {
         // 获取必然不会变动的信息，以用来作为凭据，从数据库中获取动态信息
-        const userPhone = req.user.userPhone;
-        const userEmail = req.user.userEmail;
-
-        return await this.sqlService.getUserInfos(userPhone, userEmail);
+        return await this.sqlService.getUserInfos(req.user.userId);
     }
 
 

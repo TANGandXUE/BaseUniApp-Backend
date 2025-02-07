@@ -158,22 +158,26 @@ export class SqlService {
     }
 
     // 获取所有用户信息
-    async getUserInfos(userPhone: string, userEmail: string) {
-        let userToGet: any = {};
+    async getUserInfos(userId: number) {
+        let basicInfos = await this.userInfoRepository.findOne({ where: { userId } });
 
-        if (userPhone !== '')
-            userToGet = await this.userInfoRepository.findOne({ where: { userPhone } });
-        else if (userEmail !== '')
-            userToGet = await this.userInfoRepository.findOne({ where: { userEmail } });
-        else
-            return { isSuccess: false, message: '手机号和邮箱均为空' };
+        // 获取用户资产
+        const userPoints = await this.userAssetsService.getAvailablePoints(userId);
+        const userLevel = await this.userAssetsService.getCurrentMembershipLevel(userId);
+
+        // 将用户资产和用户等级合并到基本信息中
+        let userInfos = {
+            ...basicInfos,
+            userPoints,
+            userLevel
+        }
 
         // 检查用户是否存在
-        if (!userToGet) {
+        if (!basicInfos) {
             console.log("用户不存在");
             return { isSuccess: false, message: '用户不存在' };
         } else {
-            return { isSuccess: true, message: '获取用户信息成功', data: userToGet };
+            return { isSuccess: true, message: '获取用户信息成功', data: userInfos };
         }
     }
 
