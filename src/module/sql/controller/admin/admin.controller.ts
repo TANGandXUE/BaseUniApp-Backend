@@ -78,4 +78,18 @@ export class AdminController {
         console.log('result: ', JSON.stringify(result));
         return result;
     }
+
+    // 删除用户
+    @Post('delete-user')
+    @UseGuards(JwtAuthGuard)
+    async deleteUser(@Req() req) {
+        return this.adminService.deleteUser(req.body.userId);
+    }
+
+    // 新增用户
+    @Post('create-user')
+    @UseGuards(JwtAuthGuard)
+    async createUser(@Req() req) {
+        return this.adminService.createUser(req.body.userData);
+    }
 }

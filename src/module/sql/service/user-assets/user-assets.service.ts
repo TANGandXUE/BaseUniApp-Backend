@@ -6,6 +6,7 @@ import { UserPoints } from 'src/entities/userAssets/userPoints.entity';
 import { UserMembership } from 'src/entities/userAssets/userMembership.entity';
 import { UserPremiumFeature } from 'src/entities/userAssets/userPremiumFeature.entity';
 import { MoreThan, LessThan } from 'typeorm';
+import { UserInfo } from 'src/entities/userinfo.entity';
 
 @Injectable()
 export class UserAssetsService {
@@ -19,49 +20,89 @@ export class UserAssetsService {
     private membershipRepo: Repository<UserMembership>,
     @InjectRepository(UserPremiumFeature)
     private featureRepo: Repository<UserPremiumFeature>,
+    @InjectRepository(UserInfo)
+    private userInfoRepo: Repository<UserInfo>,
   ) { }
 
   // 初始化用户资产
   async initUserAssets(userId: number): Promise<UserAssets> {
-    const exists = await this.userAssetsRepo.findOneBy({ userId });
-    if (exists) {
-      console.log("用户资产已存在: ", exists);
-      return exists;
-    }
+    try {
+      // 检查是否已存在
+      const exists = await this.userAssetsRepo.findOne({
+        where: { user: { userId } }
+      });
+      
+      if (exists) {
+        return exists;
+      }
 
-    const assets = this.userAssetsRepo.create({ userId });
-    const result = await this.userAssetsRepo.save(assets);
-    console.log("用户资产初始化成功: ", result);
-    return result;
+      // 创建新的资产记录
+      const assets = this.userAssetsRepo.create({
+        user: { userId }
+      });
+
+      const result = await this.userAssetsRepo.save(assets);
+      console.log("用户资产初始化成功: ", result);
+      return result;
+    } catch (error) {
+      console.error('初始化用户资产失败：', error);
+      throw new Error('初始化用户资产失败：' + error.message);
+    }
   }
 
   // 获取完整资产信息
   async getFullAssets(userId: number): Promise<UserAssets> {
-    const assets = await this.userAssetsRepo.findOne({
-      where: { userId },
-      relations: [
-        'userPoints',
-        'userMemberships',
-        'userPremiumFeatures'
-      ]
-    });
+    try {
+      const assets = await this.userAssetsRepo.findOne({
+        where: { user: { userId } },
+        relations: [
+          'user',
+          'userPoints',
+          'userMemberships',
+          'userPremiumFeatures'
+        ]
+      });
 
-    if (!assets) throw new NotFoundException('用户资产不存在');
-    return assets;
+      if (!assets) {
+        throw new NotFoundException('用户资产不存在');
+      }
+      return assets;
+    } catch (error) {
+      console.error('获取用户资产失败：', error);
+      throw new Error('获取用户资产失败：' + error.message);
+    }
   }
 
   // 添加积分
-  async addPoints(userId: number, amount: number, durationMs: number): Promise<UserPoints> {
-    const assets = await this.getUserAssets(userId);
-    const expireDate = new Date(Date.now() + durationMs);
+  async addPoints(userId: number, amount: number, durationMs: number, manager?: EntityManager): Promise<UserPoints> {
+    try {
+      const repo = manager ? manager.getRepository(UserAssets) : this.userAssetsRepo;
+      const pointsRepo = manager ? manager.getRepository(UserPoints) : this.pointsRepo;
 
-    const points = this.pointsRepo.create({
-      userPointsAmount: amount,
-      userPointsExpireDate: expireDate,
-      user: assets
-    });
+      const assets = await repo.findOne({
+        where: { user: { userId } },
+        relations: ['user']
+      });
 
-    return this.pointsRepo.save(points);
+      if (!assets) {
+        throw new Error('用户资产不存在');
+      }
+
+      const expireDate = new Date(Date.now() + durationMs);
+
+      const points = pointsRepo.create({
+        userPointsAmount: amount,
+        userPointsExpireDate: expireDate,
+        user: assets
+      });
+
+      const result = await pointsRepo.save(points);
+      console.log("积分添加成功: ", result);
+      return result;
+    } catch (error) {
+      console.error('添加积分失败：', error);
+      throw new Error('添加积分失败：' + error.message);
+    }
   }
 
   // 消费积分
@@ -329,9 +370,20 @@ export class UserAssetsService {
 
   // 内部方法：获取资产
   private async getUserAssets(userId: number): Promise<UserAssets> {
-    let assets = await this.userAssetsRepo.findOneBy({ userId });
-    if (!assets) assets = await this.initUserAssets(userId);
-    return assets;
+    try {
+      let assets = await this.userAssetsRepo.findOne({
+        where: { user: { userId } },
+        relations: ['user']
+      });
+      
+      if (!assets) {
+        assets = await this.initUserAssets(userId);
+      }
+      return assets;
+    } catch (error) {
+      console.error('获取用户资产失败：', error);
+      throw new Error('获取用户资产失败：' + error.message);
+    }
   }
 
   // 新增批量更新方法

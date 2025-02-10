@@ -4,6 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import axios from 'axios';
 import * as crypto from 'crypto';
 import * as dotenv from 'dotenv';
+import * as QRCode from 'qrcode';
 dotenv.config();
 import { Pay } from 'src/entities/pay/pay.entity';
 import { UserInfo } from 'src/entities/userinfo.entity';
@@ -128,10 +129,23 @@ export class PayService {
             // 将trade_no和out_trade_no合并
             this.data.out_trade_no = response.data.trade_no
             console.log('更改后的data为', this.data);
-            if (response.data.code == 1)
+            if (response.data.code == 1) {
+                // console.log('发起支付成功:', response.data);
+                // 如果存在二维码链接，将其转换为base64
+                if (response.data.qrcode) {
+                    try {
+                        const qrcodeBase64 = await QRCode.toDataURL(response.data.qrcode);
+                        response.data.qrcode = qrcodeBase64;
+                    } catch (error) {
+                        console.error('二维码转换失败:', error);
+                        return { isSuccess: false, message: "发起支付成功，但二维码转换失败，具体错误信息为：" + error }
+                    }
+                }
                 return { isSuccess: true, message: "发起支付成功", data: response.data }
-            else
+            } else {
+                // console.log('发起支付失败:', response.data);
                 return { isSuccess: false, message: `发起支付成功，但Snapay返回异常: ${JSON.stringify(response.data)}` }
+            }
         } catch (error) {
             return { isSuccess: false, message: "发起支付失败" }
         }

@@ -10,6 +10,8 @@ import { jwtConstants } from 'src/module/user/others/jwtconstants';
 import * as dotenv from 'dotenv';
 import { ShopItems } from 'src/entities/shopItems.entity';
 import { UserAssetsService } from 'src/module/sql/service/user-assets/user-assets.service';
+import { UserAssets } from 'src/entities/userAssets/userAssets.entity';
+import { DataSource } from 'typeorm';
 dotenv.config();
 
 const initUserAvatarUrl = process.env.INIT_USER_AVATAR_URL || 'https://clouddreamai.com/userLogo.jpg'
@@ -32,7 +34,8 @@ export class SqlService {
         private readonly shopItemsRepository: Repository<ShopItems>,
         // 注入相关服务
         private jwtService: JwtService,
-        private readonly userAssetsService: UserAssetsService
+        private readonly userAssetsService: UserAssetsService,
+        private readonly dataSource: DataSource
     ) { }
 
     uploadFiles(fileInfos: Array<{ fileName: string, filePath: string }>) {
@@ -64,30 +67,48 @@ export class SqlService {
             userEmail: string,
         }
     ) {
-        const userInfo = new UserInfo();
+        return this.dataSource.transaction(async manager => {
+            try {
+                // 1. 先创建用户基本信息
+                const userCount = await manager.count(UserInfo);
+                console.log("当前用户数量: ", userCount);
 
-        // 使用传入值或初始值为数据库初始化赋值
-        // 传入值
-        userInfo.userName = registerInfos.userName;
-        userInfo.userPassword = registerInfos.userPassword;
-        userInfo.userPhone = registerInfos.userPhone;
-        userInfo.userEmail = registerInfos.userEmail;
-        // 初始值
-        userInfo.userAvatarUrl = initUserAvatarUrl;
-        userInfo.userRegisterDate = new Date();
-        userInfo.userStatus = 'normal';
-        userInfo.userUsedPoints = 0;
-        userInfo.userIsAdmin = false;
+                const userInfo = new UserInfo();
+                userInfo.userName = registerInfos.userName;
+                userInfo.userPassword = registerInfos.userPassword;
+                userInfo.userPhone = registerInfos.userPhone;
+                userInfo.userEmail = registerInfos.userEmail;
+                userInfo.userAvatarUrl = initUserAvatarUrl;
+                userInfo.userRegisterDate = new Date();
+                userInfo.userStatus = 'normal';
+                userInfo.userUsedPoints = 0;
+                userInfo.userIsAdmin = userCount === 0; // 如果是第一个用户，设置为管理员
 
-        const userInfoResult = await this.userInfoRepository.save(userInfo);
+                console.log("userInfo: ", userInfo);
 
-        // 初始化用户资产
-        await this.userAssetsService.initUserAssets(userInfoResult.userId);
-        // 初始化用户积分
-        await this.userAssetsService.addPoints(userInfoResult.userId, initUserPoints, 10 * 365 * 86400 * 1000);
+                // 2. 保存用户信息
+                const savedUser = await manager.save(UserInfo, userInfo);
 
-        console.log("注册成功: ", userInfoResult);
-        return { isRegister: true, message: '注册成功' };
+                console.log("savedUser: ", savedUser);
+
+                // 3. 创建并保存用户资产记录
+                const assets = new UserAssets();
+                assets.user = savedUser;
+                const savedAssets = await manager.save(UserAssets, assets);
+
+                console.log("savedAssets: ", savedAssets);
+
+                // 4. 初始化积分
+                const result = await this.userAssetsService.addPoints(savedUser.userId, initUserPoints, 10 * 365 * 86400 * 1000, manager);
+
+                console.log("初始化积分成功: ", result);
+
+                return { isRegister: true, message: '注册成功' };
+            } catch (error) {
+                console.error('注册失败：', error);
+                throw new Error('注册失败：' + error.message);
+            }
+        });
     }
 
     // 查找用户信息是否存在

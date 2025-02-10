@@ -6,10 +6,10 @@ import { Pay } from 'src/entities/pay/pay.entity';
 import { HistoryInfo } from 'src/entities/historyInfo.entity';
 import { UserAssets } from 'src/entities/userAssets/userAssets.entity';
 import { UserAssetsService } from '../user-assets/user-assets.service';
+import { DataSource } from 'typeorm';
 import { UserPoints } from 'src/entities/userAssets/userPoints.entity';
 import { UserMembership } from 'src/entities/userAssets/userMembership.entity';
 import { UserPremiumFeature } from 'src/entities/userAssets/userPremiumFeature.entity';
-import { DataSource } from 'typeorm';
 
 @Injectable()
 export class AdminService {
@@ -292,6 +292,79 @@ export class AdminService {
                 message: '获取分页历史记录失败',
                 data: { historyList: [], pageCount: 0, total: 0 }
             }
+        }
+    }
+
+    // 删除用户
+    async deleteUser(userId: number): Promise<{
+        isSuccess: boolean;
+        message: string;
+        data: null;
+    }> {
+        return this.dataSource.transaction(async manager => {
+            try {
+                // 1. 先删除所有关联的子表记录
+                await manager.delete(UserPoints, { user: { userId } });
+                await manager.delete(UserMembership, { user: { userId } });
+                await manager.delete(UserPremiumFeature, { user: { userId } });
+
+                // 2. 删除用户资产记录
+                await manager.delete(UserAssets, { userId });
+
+                // 3. 最后删除用户基本信息
+                const userResult = await manager.delete(UserInfo, userId);
+
+                return {
+                    isSuccess: true,
+                    message: '用户删除成功',
+                    data: null
+                };
+            } catch (error) {
+                console.error('删除用户失败：', error);
+                return {
+                    isSuccess: false,
+                    message: '删除用户失败：' + error.message,
+                    data: null
+                };
+            }
+        });
+    }
+
+    // 新增用户
+    async createUser(userData: Omit<UserInfo, 'userId'>): Promise<{
+        isSuccess: boolean;
+        message: string;
+        data: UserInfo | null;
+    }> {
+        try {
+            // 检查必要字段
+            if (!userData.userName || !userData.userPassword) {
+                return {
+                    isSuccess: false,
+                    message: '用户名和密码为必填项',
+                    data: null
+                };
+            }
+
+            // 创建用户基本信息
+            const newUser = this.userInfoRepository.create(userData);
+            const savedUser = await this.userInfoRepository.save(newUser);
+
+            // 初始化用户资产
+            await this.userAssetsService.initUserAssets(savedUser.userId);
+
+            return {
+                isSuccess: true,
+                message: '用户创建成功',
+                data: savedUser
+            };
+        } catch (error) {
+            console.error('创建用户失败：', error);
+            return {
+                isSuccess: false,
+                message: '创建用户失败：' + error.message,
+                data: null
+            };
         }
     }
 }

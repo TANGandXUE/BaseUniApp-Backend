@@ -1,4 +1,4 @@
-import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, OneToOne, JoinColumn } from 'typeorm';
+import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, OneToOne } from 'typeorm';
 import { UserAssets } from './userAssets/userAssets.entity';
 
 @Entity()
@@ -44,7 +44,6 @@ export class UserInfo {
   @Column({ type: "boolean", default: false })
   userIsAdmin: boolean;
 
-  @OneToOne(() => UserAssets)
-  @JoinColumn({ name: 'userId' })
+  @OneToOne(() => UserAssets, assets => assets.user)
   assets: UserAssets;
 }

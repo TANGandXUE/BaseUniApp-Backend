@@ -20,6 +20,7 @@ import { UserAssets } from 'src/entities/userAssets/userAssets.entity';
 import { UserPoints } from 'src/entities/userAssets/userPoints.entity';
 import { UserMembership } from 'src/entities/userAssets/userMembership.entity';
 import { UserPremiumFeature } from 'src/entities/userAssets/userPremiumFeature.entity';
+import { UserInfo } from 'src/entities/userinfo.entity';
 
 @Module({
   imports: [
@@ -29,7 +30,8 @@ import { UserPremiumFeature } from 'src/entities/userAssets/userPremiumFeature.e
       UserAssets,
       UserPoints,
       UserMembership,
-      UserPremiumFeature
+      UserPremiumFeature,
+      UserInfo
     ]),
     JwtModule.register({
       secret: jwtConstants.secret,

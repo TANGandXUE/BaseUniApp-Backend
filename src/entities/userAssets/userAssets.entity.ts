@@ -1,4 +1,4 @@
-import { Entity, Column, PrimaryColumn, OneToMany, OneToOne, JoinColumn } from 'typeorm';
+import { Entity, Column, PrimaryGeneratedColumn, OneToMany, OneToOne, JoinColumn } from 'typeorm';
 import { UserPoints } from './userPoints.entity';
 import { UserMembership } from './userMembership.entity';
 import { UserPremiumFeature } from './userPremiumFeature.entity';
@@ -8,10 +8,11 @@ import { UserInfo } from '../userinfo.entity';
 export class UserAssets {
 
   //用户id
-  @PrimaryColumn({ type: "int" })
+  @PrimaryGeneratedColumn()
   userId: number;
 
   @OneToOne(() => UserInfo, user => user.assets)
+  @JoinColumn({ name: "userId" })
   user: UserInfo;
 
   // 积分明细（一对多关系）
