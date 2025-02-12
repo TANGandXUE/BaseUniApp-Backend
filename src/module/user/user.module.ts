@@ -21,6 +21,11 @@ import { UserPoints } from 'src/entities/userAssets/userPoints.entity';
 import { UserMembership } from 'src/entities/userAssets/userMembership.entity';
 import { UserPremiumFeature } from 'src/entities/userAssets/userPremiumFeature.entity';
 import { UserInfo } from 'src/entities/userinfo.entity';
+import { BindAccountsService } from './service/bind-accounts/bind-accounts.service';
+import { BindAccountsController } from './controller/bind-accounts/bind-accounts.controller';
+import { HttpModule } from '@nestjs/axios';
+import { WechatOfficial } from 'src/entities/bindAccounts/wechatOfficial.entity';
+import { CookieManagerService } from './service/cookie/cookie-manager.service';
 
 @Module({
   imports: [
@@ -31,15 +36,17 @@ import { UserInfo } from 'src/entities/userinfo.entity';
       UserPoints,
       UserMembership,
       UserPremiumFeature,
-      UserInfo
+      UserInfo,
+      WechatOfficial
     ]),
     JwtModule.register({
       secret: jwtConstants.secret,
       signOptions: { expiresIn: '24h' },
     }),
+    HttpModule
   ],
-  controllers: [UploadController, DownloadController, RegisterController, LoginController, SettingsController],
-  providers: [UploadService, DatatransService, LocalStrategy, JwtStrategy, UserAssetsService],
+  controllers: [UploadController, DownloadController, RegisterController, LoginController, SettingsController, BindAccountsController],
+  providers: [UploadService, DatatransService, LocalStrategy, JwtStrategy, UserAssetsService, BindAccountsService, CookieManagerService],
   exports: []
 })
 

@@ -30,6 +30,7 @@
     "@alicloud/openapi-client": "^0.4.9",
     "@alicloud/tea-util": "^1.4.8",
     "@gradio/client": "^1.10.0",
+    "@nestjs/axios": "^4.0.0",
     "@nestjs/common": "^10.0.0",
     "@nestjs/core": "^10.0.0",
     "@nestjs/jwt": "^10.2.0",

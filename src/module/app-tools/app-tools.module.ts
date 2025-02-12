@@ -15,14 +15,21 @@ import { MimicmotionController } from './controller/mimicmotion/mimicmotion.cont
 import { MimicmotionService } from './service/mimicmotion/mimicmotion.service';
 import { CosyvoiceController } from './controller/cosyvoice/cosyvoice.controller';
 import { CosyvoiceService } from './service/cosyvoice/cosyvoice.service';
+import { WechatArticleExporterController } from './controller/wechat-article-exporter/wechat-article-exporter.controller';
+import { WechatArticleExporterService } from './service/wechat-article-exporter/wechat-article-exporter.service';
+import { HttpModule } from '@nestjs/axios';
+import { WechatOfficial } from 'src/entities/bindAccounts/wechatOfficial.entity';
+import { CookieManagerService } from '../user/service/cookie/cookie-manager.service';
 
 @Module({
   imports: [
     AppsModule, 
     SqlModule,
-    TypeOrmModule.forFeature([Apps, HistoryInfo])
+    TypeOrmModule.forFeature([Apps, HistoryInfo, WechatOfficial]),
+    HttpModule
   ],
-  controllers: [DigitalHumanController, FacefusionController, ChatController, MimicmotionController, CosyvoiceController],
-  providers: [DigitalHumanService, AppListService, FacefusionService, ChatService, MimicmotionService, CosyvoiceService]
+  controllers: [DigitalHumanController, FacefusionController, ChatController, MimicmotionController, CosyvoiceController, WechatArticleExporterController],
+  providers: [DigitalHumanService, AppListService, FacefusionService, ChatService, MimicmotionService, CosyvoiceService, WechatArticleExporterService, CookieManagerService],
+  exports: []
 })
 export class AppToolsModule {}

@@ -17,7 +17,11 @@ export class Apps {
     @PrimaryGeneratedColumn({ type: "integer" })
     AppId: number;
 
-    // 应用名称
+    // 应用Key
+    @Column({ type: "varchar" })
+    AppKey: string;
+
+    // 应用别名
     @Column({ type: "varchar" })
     AppName: string;
 
@@ -28,6 +32,14 @@ export class Apps {
     // 应用Logo
     @Column({ type: "varchar" })
     AppLogo: string;
+
+    // 应用首页背景样式
+    @Column({ type: "varchar" })
+    AppIndexBackground: string;
+
+    // 应用首页按钮样式
+    @Column({ type: "varchar" })
+    AppIndexButton: string;
 
     // 应用所属类别
     @Column({ type: "varchar" })

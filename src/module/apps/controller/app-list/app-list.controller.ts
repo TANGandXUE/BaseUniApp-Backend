@@ -9,14 +9,14 @@ export class AppListController {
 
     // 获取公开应用列表
     @Get('public')
-    @UseGuards(JwtAuthGuard) // 后续完善后开放
+    @UseGuards(JwtAuthGuard)
     async getPublicAppList() {
         return this.appListService.getPublicAppList();
     }
 
     // 新增应用
     @Post('add')
-    @UseGuards(JwtAuthGuard) // 后续完善后开放
+    @UseGuards(JwtAuthGuard)
     async addApp(@Body() app: Apps) {
         return this.appListService.addApp(
             app
@@ -25,7 +25,7 @@ export class AppListController {
 
     // 修改应用
     @Post('update')
-    @UseGuards(JwtAuthGuard) // 后续完善后开放
+    @UseGuards(JwtAuthGuard)
     async updateApp(@Body() app: Apps) {
         return this.appListService.updateApp(app);
     }
