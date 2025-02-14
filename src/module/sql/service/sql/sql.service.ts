@@ -186,6 +186,9 @@ export class SqlService {
         const userPoints = await this.userAssetsService.getAvailablePoints(userId);
         const userLevel = await this.userAssetsService.getCurrentMembershipLevel(userId);
 
+        // console.log("userLevel: ", userLevel);
+        // console.log("userPoints: ", userPoints);
+
         // 将用户资产和用户等级合并到基本信息中
         let userInfos = {
             ...basicInfos,

@@ -12,8 +12,7 @@ export class WechatArticleExporterController {
     async searchOfficialAccounts(
         @Req() req: any,
         @Query('keyword') keyword: string,
-        @Query('begin') begin?: number,
-        @Query('size') size?: number
+        @Query('begin') begin?: number
     ) {
         // 参数验证
         if (!keyword) {
@@ -26,14 +25,12 @@ export class WechatArticleExporterController {
 
         // 参数处理
         const beginNum = begin ? parseInt(begin.toString()) : 0;
-        const sizeNum = size ? parseInt(size.toString()) : 5;
 
         // 调用服务
         return await this.wechatArticleExporterService.searchOfficialAccounts(
             req.user.userId,
             keyword,
-            beginNum,
-            sizeNum
+            beginNum
         );
     }
 

@@ -26,6 +26,14 @@ import { BindAccountsController } from './controller/bind-accounts/bind-accounts
 import { HttpModule } from '@nestjs/axios';
 import { WechatOfficial } from 'src/entities/bindAccounts/wechatOfficial.entity';
 import { CookieManagerService } from './service/cookie/cookie-manager.service';
+import { VerifyTicketController } from './controller/wechat-open-platform/verify-ticket/verify-ticket.controller';
+import { VerifyTicketService } from './service/wechat-open-platform/verify-ticket/verify-ticket.service';
+import { ComponentAccessTokenService } from './service/wechat-open-platform/component-access-token/component-access-token.service';
+import { ComponentAccessTokenController } from './controller/wechat-open-platform/component-access-token/component-access-token.controller';
+import { ComponentAccessToken } from 'src/entities/wechatOpenPlatform/component-access-token.entity';
+import { PreAuthCodeService } from './service/wechat-open-platform/pre-auth-code/pre-auth-code.service';
+import { PreAuthCodeController } from './controller/wechat-open-platform/pre-auth-code/pre-auth-code.controller';
+import { ComponentVerifyTicket } from 'src/entities/wechatOpenPlatform/component-verify-ticket.entity';
 
 @Module({
   imports: [
@@ -37,7 +45,9 @@ import { CookieManagerService } from './service/cookie/cookie-manager.service';
       UserMembership,
       UserPremiumFeature,
       UserInfo,
-      WechatOfficial
+      WechatOfficial,
+      ComponentVerifyTicket,
+      ComponentAccessToken
     ]),
     JwtModule.register({
       secret: jwtConstants.secret,
@@ -45,8 +55,8 @@ import { CookieManagerService } from './service/cookie/cookie-manager.service';
     }),
     HttpModule
   ],
-  controllers: [UploadController, DownloadController, RegisterController, LoginController, SettingsController, BindAccountsController],
-  providers: [UploadService, DatatransService, LocalStrategy, JwtStrategy, UserAssetsService, BindAccountsService, CookieManagerService],
+  controllers: [UploadController, DownloadController, RegisterController, LoginController, SettingsController, BindAccountsController, VerifyTicketController, ComponentAccessTokenController, PreAuthCodeController],
+  providers: [UploadService, DatatransService, LocalStrategy, JwtStrategy, UserAssetsService, BindAccountsService, CookieManagerService, VerifyTicketService, ComponentAccessTokenService, PreAuthCodeService],
   exports: []
 })
 

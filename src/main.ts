@@ -9,6 +9,7 @@ import cors from 'cors';
 import * as dotenv from 'dotenv';
 import * as express from 'express';
 import { join } from 'path';
+import xmlparser = require('express-xml-bodyparser');
 dotenv.config();
 
 async function bootstrap() {
@@ -17,7 +18,9 @@ async function bootstrap() {
   const port = Number(process.env.PORT || '3000');
 
 
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    rawBody: true
+  });
 
   const logger = new Logger();
 
@@ -42,6 +45,9 @@ async function bootstrap() {
   app.useStaticAssets('public');
   app.setBaseViewsDir('views');
   app.setViewEngine('ejs');
+
+  // 添加 XML 解析中间件
+  app.use(xmlparser());
 
   const config = new DocumentBuilder()
     .setTitle('Cats example')

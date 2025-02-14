@@ -61,7 +61,7 @@ export class WechatArticleExporterService {
     }
 
     // 搜索公众号
-    async searchOfficialAccounts(userId: number, keyword: string, begin: number = 0, size: number = 5): Promise<any> {
+    async searchOfficialAccounts(userId: number, keyword: string, begin: number = 0): Promise<any> {
         try {
             // 1. 获取用户的绑定记录
             const bindingRecord = await this.wechatOfficialRepository.findOne({
@@ -108,7 +108,6 @@ export class WechatArticleExporterService {
                     keyword,
                     token: bindingRecord.wechatOfficialToken,
                     begin,
-                    size
                 },
                 headers: {
                     ...this.defaultHeaders,
@@ -171,8 +170,7 @@ export class WechatArticleExporterService {
                 message: "搜索成功",
                 data: {
                     list: data.list,
-                    total: data.total,
-                    hasMore: data.list.length === size
+                    total: data.total
                 }
             };
 
@@ -258,6 +256,7 @@ export class WechatArticleExporterService {
             );
 
             const { data } = response;
+            console.log('获取文章列表响应:', data);
 
             // 4. 处理错误情况
             if (data.base_resp.ret !== 0) {
