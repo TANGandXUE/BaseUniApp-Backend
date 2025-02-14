@@ -34,6 +34,9 @@ import { ComponentAccessToken } from 'src/entities/wechatOpenPlatform/component-
 import { PreAuthCodeService } from './service/wechat-open-platform/pre-auth-code/pre-auth-code.service';
 import { PreAuthCodeController } from './controller/wechat-open-platform/pre-auth-code/pre-auth-code.controller';
 import { ComponentVerifyTicket } from 'src/entities/wechatOpenPlatform/component-verify-ticket.entity';
+import { AuthorizerService } from './service/wechat-open-platform/authorizer/authorizer.service';
+import { AuthorizerController } from './controller/wechat-open-platform/authorizer/authorizer.controller';
+import { AuthorizerToken } from 'src/entities/wechatOpenPlatform/authorizer-token.entity';
 
 @Module({
   imports: [
@@ -47,7 +50,8 @@ import { ComponentVerifyTicket } from 'src/entities/wechatOpenPlatform/component
       UserInfo,
       WechatOfficial,
       ComponentVerifyTicket,
-      ComponentAccessToken
+      ComponentAccessToken,
+      AuthorizerToken
     ]),
     JwtModule.register({
       secret: jwtConstants.secret,
@@ -55,8 +59,8 @@ import { ComponentVerifyTicket } from 'src/entities/wechatOpenPlatform/component
     }),
     HttpModule
   ],
-  controllers: [UploadController, DownloadController, RegisterController, LoginController, SettingsController, BindAccountsController, VerifyTicketController, ComponentAccessTokenController, PreAuthCodeController],
-  providers: [UploadService, DatatransService, LocalStrategy, JwtStrategy, UserAssetsService, BindAccountsService, CookieManagerService, VerifyTicketService, ComponentAccessTokenService, PreAuthCodeService],
+  controllers: [UploadController, DownloadController, RegisterController, LoginController, SettingsController, BindAccountsController, VerifyTicketController, ComponentAccessTokenController, PreAuthCodeController, AuthorizerController],
+  providers: [UploadService, DatatransService, LocalStrategy, JwtStrategy, UserAssetsService, BindAccountsService, CookieManagerService, VerifyTicketService, ComponentAccessTokenService, PreAuthCodeService, AuthorizerService],
   exports: []
 })
 

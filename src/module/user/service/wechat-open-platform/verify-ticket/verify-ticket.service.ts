@@ -36,7 +36,7 @@ export class VerifyTicketService {
     async verifySignature(timestamp: string, nonce: string, msgSignature: string, body: string): Promise<boolean> {
         try {
             // 从xml中提取加密内容
-            const encrypt = this.extractEncryptFromXml(body);
+            const encrypt = this.extractEncryptedContent(body);
 
             // 按字典序排序
             const params = [this.token, timestamp, nonce, encrypt].sort();
@@ -63,7 +63,7 @@ export class VerifyTicketService {
      */
     async decryptTicket(body: string): Promise<void> {
         try {
-            const encrypt = this.extractEncryptFromXml(body);
+            const encrypt = this.extractEncryptedContent(body);
             const encryptedData = Buffer.from(encrypt, 'base64');
             const decipher = crypto.createDecipheriv('aes-256-cbc', this.aesKey, this.iv);
             decipher.setAutoPadding(false);
@@ -74,20 +74,10 @@ export class VerifyTicketService {
             const content = decrypted.slice(20, -this.appId.length);
 
             // 解析XML内容
-            const appIdMatch = content.match(/<AppId><!\[CDATA\[(.*?)\]\]><\/AppId>/);
-            const createTimeMatch = content.match(/<CreateTime>(\d+)<\/CreateTime>/);
-            const ticketMatch = content.match(/<ComponentVerifyTicket><!\[CDATA\[(.*?)\]\]><\/ComponentVerifyTicket>/);
-
-            if (!appIdMatch || !createTimeMatch || !ticketMatch) {
-                throw new Error('无法从解密内容中提取必要信息');
-            }
-
-            const appId = appIdMatch[1];
-            const createTime = parseInt(createTimeMatch[1]);
-            const ticket = ticketMatch[1];
+            const { appId, createTime, ticket } = this.extractInfoFromDecrypted(content);
 
             // 保存到数据库
-            await this.saveTicket(appId, createTime, ticket);
+            await this.saveTicket(appId, parseInt(createTime), ticket);
             
             console.log('解密后的ticket消息已保存到数据库');
         } catch (error) {
@@ -130,23 +120,36 @@ export class VerifyTicketService {
     /**
      * 从XML中提取加密内容
      */
-    private extractEncryptFromXml(xml: string): string {
-        console.log('准备解析的XML:', xml);
-        
-        // 支持多种可能的XML格式
-        const patterns = [
-            /<Encrypt><!\[CDATA\[(.*?)\]\]><\/Encrypt>/,
-            /<Encrypt>(.*?)<\/Encrypt>/
-        ];
-        
-        for (const pattern of patterns) {
-            const match = xml.match(pattern);
-            if (match && match[1]) {
-                return match[1];
-            }
+    private extractEncryptedContent(xml: string): string {
+        // 使用正则表达式提取 Encrypt 标签中的内容
+        const pattern = /<Encrypt><!\[CDATA\[(.*?)\]\]><\/Encrypt>/;
+        const match = xml.match(pattern);
+        if (match && match[1]) {
+            return match[1];
         }
         
         throw new Error('无法从XML中提取加密内容，原始XML: ' + xml);
+    }
+
+    /**
+     * 解析解密后的XML
+     */
+    private extractInfoFromDecrypted(decrypted: string): { appId: string, createTime: string, ticket: string } {
+        // 解析解密后的XML
+        const appIdMatch = decrypted.match(/<AppId><!\[CDATA\[(.*?)\]\]><\/AppId>/);
+        const createTimeMatch = decrypted.match(/<CreateTime>(.*?)<\/CreateTime>/);
+        const ticketMatch = decrypted.match(/<ComponentVerifyTicket><!\[CDATA\[(.*?)\]\]><\/ComponentVerifyTicket>/);
+
+        if (!appIdMatch || !createTimeMatch || !ticketMatch) {
+            console.error('解密后的内容:', decrypted); // 添加日志
+            throw new Error('无法从解密内容中提取必要信息，解密后内容: ' + decrypted);
+        }
+
+        return {
+            appId: appIdMatch[1],
+            createTime: createTimeMatch[1],
+            ticket: ticketMatch[1]
+        };
     }
 
     /**
