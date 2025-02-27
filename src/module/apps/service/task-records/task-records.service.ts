@@ -12,11 +12,13 @@ export class TaskRecordsService {
 
     // 写入任务记录
     async writeTaskRecord(historyInfo: Partial<HistoryInfo>): Promise<HistoryInfo> {
+        console.log('写入任务记录:', historyInfo);
         return await this.historyInfoRepository.save(historyInfo);
     }
 
     // 更新任务记录
     async updateTaskRecord(historyInfo: Partial<HistoryInfo>) {
+        console.log('更新任务记录:', historyInfo);
         const historyId = historyInfo.historyId; // 从partialInfo中解析出historyId
         await this.historyInfoRepository.update(historyId, historyInfo);
     }

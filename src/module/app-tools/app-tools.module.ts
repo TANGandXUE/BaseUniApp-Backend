@@ -20,16 +20,39 @@ import { WechatArticleExporterService } from './service/wechat-article-exporter/
 import { HttpModule } from '@nestjs/axios';
 import { WechatOfficial } from 'src/entities/bindAccounts/wechatOfficial.entity';
 import { CookieManagerService } from '../user/service/cookie/cookie-manager.service';
+import { CozeService } from './service/coze/coze.service';
+import { CozeGateway } from './gateway/coze.gateway';
+import { CozeController } from './controller/coze/coze.controller';
+import { CozeAuthService } from './service/coze/coze-auth.service';
+import { KnowledgeController } from './controller/knowledge/knowledge.controller';
+import { KnowledgeService } from './service/knowledge/knowledge.service';
+import { Knowledge } from 'src/entities/apps/knowledge/knowledge.entity';
+import { SearchController } from './controller/search/search.controller';
+import { SearchService } from './service/search/search.service';
 
 @Module({
   imports: [
     AppsModule, 
     SqlModule,
-    TypeOrmModule.forFeature([Apps, HistoryInfo, WechatOfficial]),
+    TypeOrmModule.forFeature([Apps, HistoryInfo, WechatOfficial, Knowledge]),
     HttpModule
   ],
-  controllers: [DigitalHumanController, FacefusionController, ChatController, MimicmotionController, CosyvoiceController, WechatArticleExporterController],
-  providers: [DigitalHumanService, AppListService, FacefusionService, ChatService, MimicmotionService, CosyvoiceService, WechatArticleExporterService, CookieManagerService],
-  exports: []
+  controllers: [DigitalHumanController, FacefusionController, ChatController, MimicmotionController, CosyvoiceController, WechatArticleExporterController, CozeController, KnowledgeController, SearchController],
+  providers: [
+    DigitalHumanService, 
+    AppListService, 
+    FacefusionService, 
+    ChatService, 
+    MimicmotionService, 
+    CosyvoiceService, 
+    WechatArticleExporterService, 
+    CookieManagerService, 
+    CozeService,
+    CozeGateway,
+    CozeAuthService,
+    KnowledgeService,
+    SearchService
+  ],
+  exports: [CozeService]
 })
 export class AppToolsModule {}

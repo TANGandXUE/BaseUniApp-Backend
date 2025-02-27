@@ -10,6 +10,7 @@ import * as dotenv from 'dotenv';
 import * as express from 'express';
 import { join } from 'path';
 import xmlparser = require('express-xml-bodyparser');
+import { WsAdapter } from '@nestjs/platform-ws';
 dotenv.config();
 
 async function bootstrap() {
@@ -17,10 +18,12 @@ async function bootstrap() {
 
   const port = Number(process.env.PORT || '3000');
 
-
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     rawBody: true
   });
+
+  // 使用WebSocket适配器
+  app.useWebSocketAdapter(new WsAdapter(app));
 
   const logger = new Logger();
 
