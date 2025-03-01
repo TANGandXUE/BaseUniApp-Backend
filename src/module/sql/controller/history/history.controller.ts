@@ -20,7 +20,7 @@ export class HistoryController {
             req.body.prop,              // 排序字段
             req.body.order,             // 升降序
         );
-        console.log('result: ', JSON.stringify(result));
+        // console.log('result: ', JSON.stringify(result));
         return result;
     }
 }

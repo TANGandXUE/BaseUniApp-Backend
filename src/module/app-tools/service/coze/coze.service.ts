@@ -3,6 +3,7 @@ import { CozeAPI, ChatEventType, RoleType, COZE_CN_BASE_URL, EnterMessage } from
 import { TaskRecordsService } from '../../../apps/service/task-records/task-records.service';
 import { HistoryInfo } from 'src/entities/historyInfo.entity';
 import { CozeAuthService } from './coze-auth.service';
+import axios from 'axios';
 
 @Injectable()
 export class CozeService implements OnModuleInit, OnModuleDestroy {
@@ -18,7 +19,7 @@ export class CozeService implements OnModuleInit, OnModuleDestroy {
     constructor(
         private readonly taskRecordsService: TaskRecordsService,
         private readonly cozeAuthService: CozeAuthService
-    ) {}
+    ) { }
 
     onModuleInit() {
         // 每5分钟清理一次过期的token
@@ -43,6 +44,25 @@ export class CozeService implements OnModuleInit, OnModuleDestroy {
         },
         historyId?: number
     ): Promise<{ historyId: number; isNew: boolean }> {
+        // 如果提供了historyId，先检查它是否存在
+        if (historyId) {
+            try {
+                const existingRecord = await this.taskRecordsService.getTaskRecordById(historyId);
+                if (!existingRecord) {
+                    this.logger.warn(`提供的historyId ${historyId} 在数据库中不存在，将创建新的历史记录`);
+                    historyId = undefined; // 重置historyId，让下面的代码创建新记录
+                } else if (existingRecord.historyUserId !== user.userId) {
+                    this.logger.warn(`提供的historyId ${historyId} 不属于当前用户，将创建新的历史记录`);
+                    historyId = undefined; // 重置historyId，让下面的代码创建新记录
+                } else {
+                    this.logger.log(`找到有效的历史记录，historyId: ${historyId}`);
+                }
+            } catch (error) {
+                this.logger.error(`检查historyId ${historyId} 时出错:`, error);
+                historyId = undefined; // 出错时创建新记录
+            }
+        }
+
         if (!historyId) {
             const newHistory: Partial<HistoryInfo> = {
                 historyUserId: user.userId,
@@ -62,8 +82,25 @@ export class CozeService implements OnModuleInit, OnModuleDestroy {
 
         if (!this.chatHistories.has(historyId)) {
             this.logger.log('初始化内存中的聊天历史, historyId:', historyId);
+            
+            // 从数据库加载现有对话历史
+            let existingMessages = [];
+            try {
+                const existingRecord = await this.taskRecordsService.getTaskRecordById(historyId);
+                if (existingRecord && existingRecord.historyResult && Array.isArray(existingRecord.historyResult)) {
+                    existingMessages = existingRecord.historyResult.map(msg => ({
+                        role: (msg as any).role,
+                        content: (msg as any).content,
+                        timestamp: (msg as any).timestamp
+                    }));
+                    this.logger.log('从数据库加载了现有对话历史:', existingMessages);
+                }
+            } catch (error) {
+                this.logger.error('加载现有对话历史失败:', error);
+            }
+            
             this.chatHistories.set(historyId, {
-                messages: [],
+                messages: existingMessages,
                 startTime: Date.now(),
                 currentAssistantMessage: ''
             });
@@ -74,17 +111,37 @@ export class CozeService implements OnModuleInit, OnModuleDestroy {
 
     // 更新对话历史记录
     private async updateChatHistory(historyId: number, message: { role: string; content: string }) {
-        this.logger.log('准备更新对话历史, historyId:', historyId);
+        this.logger.log(`准备更新对话历史, historyId: ${historyId}`);
         this.logger.log('新消息:', message);
-        
+
         const history = this.chatHistories.get(historyId);
         if (history) {
+            // 添加新消息到内存中的历史记录
             history.messages.push({ ...message, timestamp: Date.now() });
-            this.logger.log('当前内存中的所有消息:', history.messages);
-            
+            this.logger.log(`当前内存中的消息数量: ${history.messages.length}`);
+
+            // 先获取数据库中的现有记录
+            const existingRecord = await this.taskRecordsService.getTaskRecordById(historyId);
+            if (!existingRecord) {
+                this.logger.warn(`警告: 数据库中未找到对应的历史记录, historyId: ${historyId}`);
+                return;
+            }
+
+            // 确保historyResult是数组
+            let existingMessages = [];
+            try {
+                if (existingRecord.historyResult && Array.isArray(existingRecord.historyResult)) {
+                    existingMessages = existingRecord.historyResult;
+                    this.logger.log(`数据库中现有消息数量: ${existingMessages.length}`);
+                }
+            } catch (error) {
+                this.logger.error('解析现有消息失败:', error);
+            }
+
+            // 将新消息添加到现有消息列表中
             const updateData = {
                 historyId,
-                historyStatus: 'completed',
+                historyStatus: 'processing',
                 historyUseTime: Date.now() - history.startTime,
                 historyResult: history.messages.map(msg => ({
                     role: msg.role,
@@ -92,10 +149,12 @@ export class CozeService implements OnModuleInit, OnModuleDestroy {
                     timestamp: msg.timestamp
                 }))
             };
-            this.logger.log('准备更新到数据库的数据:', updateData);
+            
+            this.logger.log(`准备更新到数据库的数据, 消息数量: ${updateData.historyResult.length}`);
             await this.taskRecordsService.updateTaskRecord(updateData);
+            this.logger.log(`历史记录更新成功, historyId: ${historyId}`);
         } else {
-            this.logger.warn('警告: 未找到对应的历史记录, historyId:', historyId);
+            this.logger.warn(`警告: 内存中未找到对应的历史记录, historyId: ${historyId}`);
         }
     }
 
@@ -105,7 +164,7 @@ export class CozeService implements OnModuleInit, OnModuleDestroy {
         const history = this.chatHistories.get(historyId);
         if (history) {
             history.endTime = Date.now();
-            
+
             // 如果有未保存的助手回复，先保存
             if (history.currentAssistantMessage) {
                 history.messages.push({
@@ -115,7 +174,14 @@ export class CozeService implements OnModuleInit, OnModuleDestroy {
                 });
                 history.currentAssistantMessage = '';
             }
-            
+
+            // 先获取数据库中的现有记录
+            const existingRecord = await this.taskRecordsService.getTaskRecordById(historyId);
+            if (!existingRecord) {
+                this.logger.warn('警告: 数据库中未找到对应的历史记录, historyId:', historyId);
+                return;
+            }
+
             const finalData = {
                 historyId,
                 historyStatus: 'completed',
@@ -149,13 +215,12 @@ export class CozeService implements OnModuleInit, OnModuleDestroy {
         historyId?: number;
     }) {
         let finalHistoryId: number | undefined = params.historyId;
-        
+        this.logger.log(`streamChat 开始处理, 传入的 historyId: ${params.historyId || '无'}`);
+
         try {
             // 获取access token
             const accessToken = await this.cozeAuthService.getAccessToken(params.user?.userId || 0);
 
-            console.log('user', params.user);
-            
             // 创建CozeAPI实例
             const cozeClient = new CozeAPI({
                 baseURL: COZE_CN_BASE_URL,
@@ -164,8 +229,10 @@ export class CozeService implements OnModuleInit, OnModuleDestroy {
 
             // 初始化或获取历史记录
             if (params.user) {
-                const { historyId } = await this.initOrGetChatHistory(params.user, params.historyId);
+                this.logger.log(`开始处理对话历史, 用户ID: ${params.user.userId}, 请求的historyId: ${params.historyId || '无'}`);
+                const { historyId, isNew } = await this.initOrGetChatHistory(params.user, params.historyId);
                 finalHistoryId = historyId;
+                this.logger.log(`最终使用的historyId: ${finalHistoryId}, 是否新建: ${isNew}`);
 
                 // 记录用户消息
                 await this.updateChatHistory(finalHistoryId, {
@@ -202,8 +269,26 @@ export class CozeService implements OnModuleInit, OnModuleDestroy {
                         [Symbol.asyncIterator]: async function* () {
                             try {
                                 for await (const chunk of stream) {
+                                    // 检查是否为answer类型且内容中包含card_type的消息，如果是则跳过
+                                    if (chunk.data && 
+                                        typeof chunk.data === 'object' &&
+                                        (chunk.event === 'conversation.message.completed' || chunk.event === 'conversation.message.delta') && 
+                                        (chunk.data as any).type === 'answer' &&
+                                        (chunk.data as any).content &&
+                                        typeof (chunk.data as any).content === 'string' &&
+                                        (chunk.data as any).content.includes('card_type')) {
+                                        self.logger.log('过滤掉answer类型且包含card_type的消息:', {
+                                            id: (chunk.data as any).id,
+                                            event: chunk.event,
+                                            type: (chunk.data as any).type,
+                                            content_type: (chunk.data as any).content_type,
+                                            content_preview: ((chunk.data as any).content as string).substring(0, 100) + '...'
+                                        });
+                                        continue; // 跳过此消息，不发送给前端
+                                    }
+                                    
                                     if (history && chunk.event === ChatEventType.CONVERSATION_MESSAGE_DELTA) {
-                                        const content = chunk.data?.content;
+                                        const content = typeof chunk.data === 'object' ? (chunk.data as any)?.content : undefined;
                                         if (content) {
                                             history.currentAssistantMessage += content;
                                         }
@@ -245,7 +330,7 @@ export class CozeService implements OnModuleInit, OnModuleDestroy {
     async deleteHistory(historyId: number, userId: number) {
         try {
             this.logger.log('开始删除历史记录:', historyId, userId);
-            
+
             const record = await this.taskRecordsService.getTaskRecordById(historyId);
             if (!record) {
                 this.logger.log('历史记录不存在:', historyId);
@@ -256,7 +341,9 @@ export class CozeService implements OnModuleInit, OnModuleDestroy {
                 };
             }
 
-            if (record.historyUserId !== userId) {
+            // 确保record是HistoryInfo类型
+            const historyRecord = record as any;
+            if (historyRecord.historyUserId !== userId) {
                 this.logger.log('无权删除该历史记录:', historyId, userId);
                 return {
                     isSuccess: false,
@@ -267,9 +354,9 @@ export class CozeService implements OnModuleInit, OnModuleDestroy {
 
             await this.taskRecordsService.deleteTaskRecord(String(historyId));
             this.logger.log('历史记录删除成功:', historyId);
-            
+
             this.chatHistories.delete(historyId);
-            
+
             return {
                 isSuccess: true,
                 message: '历史记录删除成功',
@@ -281,6 +368,48 @@ export class CozeService implements OnModuleInit, OnModuleDestroy {
                 isSuccess: false,
                 message: '删除历史记录失败，原因：' + error.message,
                 data: {}
+            };
+        }
+    }
+
+    // 获取智能体列表
+    async getBotsList() {
+        try {
+            this.logger.log('开始获取智能体列表');
+            
+            // 获取access token，使用0作为userId，表示系统级操作
+            const accessToken = await this.cozeAuthService.getAccessToken(0);
+            
+            // 从环境变量获取space_id
+            const spaceId = process.env.COZE_SPACE_ID;
+            if (!spaceId) {
+                throw new Error('未配置COZE_SPACE_ID环境变量');
+            }
+            
+            // 调用Coze API获取智能体列表
+            const response = await axios.get(`${COZE_CN_BASE_URL}/v1/space/published_bots_list`, {
+                params: {
+                    space_id: spaceId
+                },
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            this.logger.log('获取智能体列表成功');
+            
+            return {
+                isSuccess: true,
+                message: '获取智能体列表成功',
+                data: response.data
+            };
+        } catch (error) {
+            this.logger.error('获取智能体列表失败:', error);
+            return {
+                isSuccess: false,
+                message: '获取智能体列表失败，原因：' + error.message,
+                data: null
             };
         }
     }

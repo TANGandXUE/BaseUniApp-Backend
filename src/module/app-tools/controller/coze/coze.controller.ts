@@ -1,4 +1,4 @@
-import { Controller, Post, Body, UseGuards, Req } from '@nestjs/common';
+import { Controller, Post, Body, UseGuards, Req, Get } from '@nestjs/common';
 import { CozeService } from '../../service/coze/coze.service';
 import { JwtAuthGuard } from 'src/module/user/others/jwt-auth.guard';
 
@@ -19,5 +19,13 @@ export class CozeController {
     ) {
         console.log('historyId', historyId);
         return await this.cozeService.deleteHistory(historyId, req.user.userId);
+    }
+
+    /**
+     * 获取智能体列表
+     */
+    @Get('bots')
+    async getBotsList() {
+        return await this.cozeService.getBotsList();
     }
 }
