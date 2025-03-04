@@ -65,13 +65,31 @@ export class SqlService {
             userPassword: string,
             userPhone: string,
             userEmail: string,
+            userBeInvitedCode?: string, // 用户填写的邀请码参数
         }
     ) {
         return this.dataSource.transaction(async manager => {
             try {
+                // 0. 先查找邀请人，如果邀请人不存在，则isRegister为false
+                // 当之后不强制邀请注册时，可以删除这段代码
+                const inviter = await this.findUserByInviteCode(registerInfos.userBeInvitedCode);
+                if (!inviter) {
+                    return { isRegister: false, message: '邀请人不存在' };
+                }
+
                 // 1. 先创建用户基本信息
                 const userCount = await manager.count(UserInfo);
                 console.log("当前用户数量: ", userCount);
+
+                // 生成随机邀请码
+                const generateInviteCode = () => {
+                    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+                    let code = '';
+                    for (let i = 0; i < 8; i++) {
+                        code += chars.charAt(Math.floor(Math.random() * chars.length));
+                    }
+                    return code;
+                };
 
                 const userInfo = new UserInfo();
                 userInfo.userName = registerInfos.userName;
@@ -79,6 +97,23 @@ export class SqlService {
                 userInfo.userPhone = registerInfos.userPhone;
                 userInfo.userEmail = registerInfos.userEmail;
                 userInfo.userAvatarUrl = initUserAvatarUrl;
+                userInfo.userInviteCode = generateInviteCode(); // 设置用户的邀请码
+                
+                // 如果有邀请码，查找对应的用户ID
+                if (registerInfos.userBeInvitedCode) {
+                    // 通过邀请码查找对应的用户
+                    const inviter = await manager.findOne(UserInfo, {
+                        where: { userInviteCode: registerInfos.userBeInvitedCode }
+                    });
+                    
+                    if (inviter) {
+                        userInfo.userBeInvitedUserId = inviter.userId; // 设置邀请人的用户ID
+                        console.log(`找到邀请人ID: ${inviter.userId}`);
+                    } else {
+                        console.log(`未找到对应邀请码的用户: ${registerInfos.userBeInvitedCode}`);
+                    }
+                }
+
                 userInfo.userRegisterDate = new Date();
                 userInfo.userStatus = 'normal';
                 userInfo.userUsedPoints = 0;
@@ -181,6 +216,8 @@ export class SqlService {
     // 获取所有用户信息
     async getUserInfos(userId: number) {
         let basicInfos = await this.userInfoRepository.findOne({ where: { userId } });
+
+        console.log("basicInfos: ", basicInfos);
 
         // 获取用户资产
         const userPoints = await this.userAssetsService.getAvailablePoints(userId);
@@ -360,7 +397,9 @@ export class SqlService {
             userUsedPoints: user.userUsedPoints,
             userRegisterDate: user.userRegisterDate,
             userAvatarUrl: user.userAvatarUrl,
-            userIsAdmin: user.userIsAdmin
+            userIsAdmin: user.userIsAdmin,
+            userInviteCode: user.userInviteCode,
+            userBeInvitedUserId: user.userBeInvitedUserId
         };
 
         // 下面这行这是官方文档的写法，但被证明是错误的了，所以更新了写法
@@ -463,6 +502,20 @@ export class SqlService {
             return { isSuccess: false, message: '商品删除失败', data: {} };
     }
 
+    // 通过邀请码查找用户
+    async findUserByInviteCode(inviteCode: string) {
+        try {
+            // 查找拥有该邀请码的用户
+            const user = await this.userInfoRepository.findOne({
+                where: { userInviteCode: inviteCode }
+            });
+            
+            return user;
+        } catch (error) {
+            console.error("通过邀请码查找用户时出错：", error);
+            throw new Error("查找用户失败：" + error.message);
+        }
+    }
 
 }
 

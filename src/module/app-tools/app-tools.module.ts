@@ -21,7 +21,7 @@ import { HttpModule } from '@nestjs/axios';
 import { WechatOfficial } from 'src/entities/bindAccounts/wechatOfficial.entity';
 import { CookieManagerService } from '../user/service/cookie/cookie-manager.service';
 import { CozeService } from './service/coze/coze.service';
-import { CozeGateway } from './gateway/coze.gateway';
+import { CozeGateway } from './gateway/coze/coze.gateway';
 import { CozeController } from './controller/coze/coze.controller';
 import { CozeAuthService } from './service/coze/coze-auth.service';
 import { KnowledgeController } from './controller/knowledge/knowledge.controller';

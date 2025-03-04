@@ -44,6 +44,14 @@ export class UserInfo {
   @Column({ type: "boolean", default: false })
   userIsAdmin: boolean;
 
+  // 邀请人的用户ID
+  @Column({ type: "int", nullable: true })
+  userBeInvitedUserId: number;
+
+  // 用户自己的邀请码
+  @Column({ type: "varchar", nullable: true })
+  userInviteCode: string;
+
   @OneToOne(() => UserAssets, assets => assets.user)
   assets: UserAssets;
 }

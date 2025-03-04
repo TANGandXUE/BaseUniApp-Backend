@@ -19,16 +19,15 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
             userName: payload.userName,
             userId: payload.userId,
             userPassword: payload.userPassword,
-            userPoints: payload.userPoints,
             userPhone: payload.userPhone,
             userEmail: payload.userEmail,
             userStatus: payload.userStatus,
-            userLevel: payload.userLevel,
-            userExpireDate: payload.userExpireDate,
             userUsedPoints: payload.userUsedPoints,
             userRegisterDate: payload.userRegisterDate,
             userAvatarUrl: payload.userAvatarUrl,
-            userIsAdmin: payload.userIsAdmin
+            userIsAdmin: payload.userIsAdmin,
+            userInviteCode: payload.userInviteCode || '',
+            userBeInvitedUserId: payload.userBeInvitedUserId || null
         };
     }
 }

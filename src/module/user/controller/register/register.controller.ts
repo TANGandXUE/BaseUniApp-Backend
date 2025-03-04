@@ -2,7 +2,6 @@ import { Controller, Get, Post, Render, Req } from '@nestjs/common';
 import { SqlService } from 'src/module/sql/service/sql/sql.service';
 import { AlimsgService } from 'src/module/api/service/alimsg/alimsg.service';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { json } from 'stream/consumers';
 
 @Controller('/user/register')
 @ApiTags('用户注册相关')
@@ -23,12 +22,13 @@ export class RegisterController {
     // http://localhost:3000/user/register/post
     @Post('post')
     // 使用了中间件处理参数，代码重构时应改成守卫
-    async register(@Req() req) {
+    async register(@Req() req: any) {
         const registerParams = {
             userName: req.body.userName,
             userPassword: req.body.userPassword,
             userPhone: req.body.userPhone,
             userEmail: req.body.userEmail,
+            userBeInvitedCode: req.body.userBeInvitedCode || '',
         }
         console.log("registerParams: ", registerParams);
 
@@ -59,6 +59,47 @@ export class RegisterController {
         )
         console.log('smsStatus: ', smsDtos);
         return smsDtos;
+    }
+
+    // 根据邀请码查询邀请人ID
+    @Post('getInviterByCode')
+    @ApiOperation({ summary: '根据邀请码查询邀请人ID' })
+    async getInviterByCode(@Req() req) {
+        try {
+            const inviteCode = req.body.inviteCode;
+            
+            if (!inviteCode) {
+                return {
+                    isSuccess: false,
+                    message: '邀请码不能为空',
+                    data: null
+                };
+            }
+            
+            // 在数据库中查找拥有该邀请码的用户
+            const inviter = await this.sqlService.findUserByInviteCode(inviteCode);
+            
+            if (inviter) {
+                return {
+                    isSuccess: true,
+                    message: '找到邀请人',
+                    data: inviter.userId
+                };
+            } else {
+                return {
+                    isSuccess: false,
+                    message: '邀请人不存在',
+                    data: null
+                };
+            }
+        } catch (error) {
+            console.error('查询邀请人失败：', error);
+            return {
+                isSuccess: false,
+                message: '查询邀请人失败: ' + error.message,
+                data: null
+            };
+        }
     }
 
     @Post('forgetpassword')

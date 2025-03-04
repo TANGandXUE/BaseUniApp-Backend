@@ -287,6 +287,10 @@ export class CozeService implements OnModuleInit, OnModuleDestroy {
                                         continue; // 跳过此消息，不发送给前端
                                     }
                                     
+                                    // 记录发送给前端的数据
+                                    const chunkEvent = chunk.event || '未知事件';
+                                    self.logger.log(`回传WebSocket数据 [${chunkEvent}]:`, JSON.stringify(chunk).substring(0, 500) + (JSON.stringify(chunk).length > 500 ? '...' : ''));
+                                    
                                     if (history && chunk.event === ChatEventType.CONVERSATION_MESSAGE_DELTA) {
                                         const content = typeof chunk.data === 'object' ? (chunk.data as any)?.content : undefined;
                                         if (content) {

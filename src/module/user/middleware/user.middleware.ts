@@ -14,7 +14,7 @@ export class UserMiddleware implements NestMiddleware {
     let userName = req.body['userName'];
     let userPassword = req.body['userPassword'];
     let userPhoneOrEmail = req.body['userPhoneOrEmail'];
-
+    let userBeInvitedCode = req.body['userBeInvitedCode'] || '';
     // 用户名逻辑
     if (userName === '') {
       // response返回错误:用户名不能为空

@@ -37,6 +37,8 @@ import { ComponentVerifyTicket } from 'src/entities/wechatOpenPlatform/component
 import { AuthorizerService } from './service/wechat-open-platform/authorizer/authorizer.service';
 import { AuthorizerController } from './controller/wechat-open-platform/authorizer/authorizer.controller';
 import { AuthorizerToken } from 'src/entities/wechatOpenPlatform/authorizer-token.entity';
+import { InviteService } from './service/invite/invite.service';
+import { InviteController } from './controller/invite/invite.controller';
 
 @Module({
   imports: [
@@ -59,8 +61,8 @@ import { AuthorizerToken } from 'src/entities/wechatOpenPlatform/authorizer-toke
     }),
     HttpModule
   ],
-  controllers: [UploadController, DownloadController, RegisterController, LoginController, SettingsController, BindAccountsController, VerifyTicketController, ComponentAccessTokenController, PreAuthCodeController, AuthorizerController],
-  providers: [UploadService, DatatransService, LocalStrategy, JwtStrategy, UserAssetsService, BindAccountsService, CookieManagerService, VerifyTicketService, ComponentAccessTokenService, PreAuthCodeService, AuthorizerService],
+  controllers: [UploadController, DownloadController, RegisterController, LoginController, SettingsController, BindAccountsController, VerifyTicketController, ComponentAccessTokenController, PreAuthCodeController, AuthorizerController, InviteController],
+  providers: [UploadService, DatatransService, LocalStrategy, JwtStrategy, UserAssetsService, BindAccountsService, CookieManagerService, VerifyTicketService, ComponentAccessTokenService, PreAuthCodeService, AuthorizerService, InviteService],
   exports: []
 })
 
