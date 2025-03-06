@@ -29,15 +29,20 @@ import { KnowledgeService } from './service/knowledge/knowledge.service';
 import { Knowledge } from 'src/entities/apps/knowledge/knowledge.entity';
 import { SearchController } from './controller/search/search.controller';
 import { SearchService } from './service/search/search.service';
+import { PixverseController } from './controller/pixverse/pixverse.controller';
+import { PixverseService } from './service/pixverse/pixverse.service';
+import { ApiController } from './controller/chat/api/api.controller';
+import { ApiService } from './service/chat/api/api.service';
+import { ApiKey } from 'src/entities/apps/chat/apiKey.entity';
 
 @Module({
   imports: [
     AppsModule, 
     SqlModule,
-    TypeOrmModule.forFeature([Apps, HistoryInfo, WechatOfficial, Knowledge]),
+    TypeOrmModule.forFeature([Apps, HistoryInfo, WechatOfficial, Knowledge, ApiKey]),
     HttpModule
   ],
-  controllers: [DigitalHumanController, FacefusionController, ChatController, MimicmotionController, CosyvoiceController, WechatArticleExporterController, CozeController, KnowledgeController, SearchController],
+  controllers: [DigitalHumanController, FacefusionController, ChatController, MimicmotionController, CosyvoiceController, WechatArticleExporterController, CozeController, KnowledgeController, SearchController, PixverseController, ApiController],
   providers: [
     DigitalHumanService, 
     AppListService, 
@@ -51,7 +56,9 @@ import { SearchService } from './service/search/search.service';
     CozeGateway,
     CozeAuthService,
     KnowledgeService,
-    SearchService
+    SearchService,
+    PixverseService,
+    ApiService
   ],
   exports: [CozeService]
 })

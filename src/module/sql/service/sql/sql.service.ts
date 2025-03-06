@@ -147,6 +147,7 @@ export class SqlService {
     }
 
     // 查找用户信息是否存在
+    // 定义一个异步函数 elementExist，用于检查某个字段值在用户信息中是否存在
     async elementExist(fieldName: any, value: any) {
         // 根据提供的字段名和值查询用户信息
         return await this.userInfoRepository.findOne({ where: { [fieldName]: value } });
