@@ -181,4 +181,49 @@ export class ApiService {
             };
         }
     }
+
+    /**
+     * 验证API密钥并返回相关信息
+     * @param apiKey API密钥
+     * @returns API密钥信息或null（如果无效）
+     */
+    async validateApiKey(apiKey: string) {
+        try {
+            // 在数据库中查找API密钥
+            const apiKeyEntity = await this.apiKeyRepository.findOne({
+                where: { apiKey }
+            });
+
+            if (!apiKeyEntity) {
+                this.logger.warn(`API密钥不存在: ${apiKey.substring(0, 5)}***`);
+                return null;
+            }
+
+            return apiKeyEntity;
+        } catch (error) {
+            this.logger.error('验证API密钥时出错:', error);
+            return null;
+        }
+    }
+
+    /**
+     * 更新API密钥使用统计
+     * @param apiKeyId API密钥ID
+     */
+    async updateApiKeyUsageStats(apiKeyId: number) {
+        try {
+            // 更新API密钥使用次数和最后使用时间
+            await this.apiKeyRepository.update(
+                { apiKeyId },
+                {
+                    apiKeyUsageCount: () => 'apiKeyUsageCount + 1',
+                    apiKeyLastUsedAt: new Date()
+                }
+            );
+            
+            this.logger.log(`已更新API密钥(ID: ${apiKeyId})的使用统计`);
+        } catch (error) {
+            this.logger.error(`更新API密钥(ID: ${apiKeyId})使用统计时出错:`, error);
+        }
+    }
 }

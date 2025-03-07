@@ -34,6 +34,8 @@ import { PixverseService } from './service/pixverse/pixverse.service';
 import { ApiController } from './controller/chat/api/api.controller';
 import { ApiService } from './service/chat/api/api.service';
 import { ApiKey } from 'src/entities/apps/chat/apiKey.entity';
+import { ApiChatController } from './controller/chat/api-chat/api-chat.controller';
+import { ApiChatService } from './service/chat/api-chat/api-chat.service';
 
 @Module({
   imports: [
@@ -42,7 +44,7 @@ import { ApiKey } from 'src/entities/apps/chat/apiKey.entity';
     TypeOrmModule.forFeature([Apps, HistoryInfo, WechatOfficial, Knowledge, ApiKey]),
     HttpModule
   ],
-  controllers: [DigitalHumanController, FacefusionController, ChatController, MimicmotionController, CosyvoiceController, WechatArticleExporterController, CozeController, KnowledgeController, SearchController, PixverseController, ApiController],
+  controllers: [DigitalHumanController, FacefusionController, ChatController, MimicmotionController, CosyvoiceController, WechatArticleExporterController, CozeController, KnowledgeController, SearchController, PixverseController, ApiController, ApiChatController],
   providers: [
     DigitalHumanService, 
     AppListService, 
@@ -58,7 +60,8 @@ import { ApiKey } from 'src/entities/apps/chat/apiKey.entity';
     KnowledgeService,
     SearchService,
     PixverseService,
-    ApiService
+    ApiService,
+    ApiChatService
   ],
   exports: [CozeService]
 })
