@@ -1,8 +1,9 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
-import { CozeAPI, ChatEventType, RoleType, COZE_CN_BASE_URL, EnterMessage } from '@coze/api';
+import { CozeAPI, ChatEventType, RoleType, COZE_CN_BASE_URL, COZE_COM_BASE_URL, EnterMessage } from '@coze/api';
 import { TaskRecordsService } from '../../../apps/service/task-records/task-records.service';
 import { HistoryInfo } from 'src/entities/historyInfo.entity';
-import { CozeAuthService } from './coze-auth.service';
+import { CozeAuthService, CozeApiType } from './coze-auth.service';
+import { DEFAULT_COZE_BOT_ID_CN, DEFAULT_COZE_BOT_ID_COM } from '../../config/coze.constants';
 import axios from 'axios';
 
 @Injectable()
@@ -15,6 +16,8 @@ export class CozeService implements OnModuleInit, OnModuleDestroy {
         currentAssistantMessage?: string;
     }> = new Map();
     private cleanupInterval: NodeJS.Timeout;
+    // 缓存机器人来源信息
+    private botSourceCache: Map<string, CozeApiType> = new Map();
 
     constructor(
         private readonly taskRecordsService: TaskRecordsService,
@@ -31,6 +34,61 @@ export class CozeService implements OnModuleInit, OnModuleDestroy {
     onModuleDestroy() {
         if (this.cleanupInterval) {
             clearInterval(this.cleanupInterval);
+        }
+    }
+
+    /**
+     * 检测bot_id属于哪个API来源
+     * @param bot_id 机器人ID
+     * @returns API类型
+     */
+    private async getBotApiType(bot_id: string): Promise<CozeApiType> {
+        console.log('0');
+        // 如果在缓存中，直接返回
+        if (this.botSourceCache.has(bot_id)) {
+            return this.botSourceCache.get(bot_id);
+        }
+        console.log('1');
+
+        // 对于默认bot_id，直接返回对应类型
+        if (bot_id === DEFAULT_COZE_BOT_ID_CN) {
+            this.botSourceCache.set(bot_id, CozeApiType.CN);
+            return CozeApiType.CN;
+        }
+        if (bot_id === DEFAULT_COZE_BOT_ID_COM) {
+            this.botSourceCache.set(bot_id, CozeApiType.COM);
+            return CozeApiType.COM;
+        }
+        console.log('2');
+        try {
+            // 尝试获取CN的bots列表
+            const cnBots = await this.getBotsFromSource(CozeApiType.CN);
+            const foundInCN = cnBots.some(bot => bot.bot_id === bot_id);
+            if (foundInCN) {
+                this.botSourceCache.set(bot_id, CozeApiType.CN);
+                return CozeApiType.CN;
+            }
+
+            console.log('CozeApiType.COM', CozeApiType.COM);
+            // 尝试获取COM的bots列表
+            const comBots = await this.getBotsFromSource(CozeApiType.COM);
+            console.log('comBots', comBots);
+            const foundInCOM = comBots.some(bot => bot.bot_id === bot_id);
+            if (foundInCOM) {
+                this.botSourceCache.set(bot_id, CozeApiType.COM);
+                return CozeApiType.COM;
+            }
+
+            console.log('CozeApiType.CN', CozeApiType.CN);
+            this.logger.log('33333333333333333');
+            // 如果两个来源都没找到，默认使用CN
+            this.logger.warn(`无法确定bot_id ${bot_id}的来源，默认使用CN`);
+            this.botSourceCache.set(bot_id, CozeApiType.CN);
+            return CozeApiType.CN;
+        } catch (error) {
+            this.logger.error(`确定bot_id来源时出错:`, error);
+            // 出错时默认使用CN
+            return CozeApiType.CN;
         }
     }
 
@@ -218,12 +276,20 @@ export class CozeService implements OnModuleInit, OnModuleDestroy {
         this.logger.log(`streamChat 开始处理, 传入的 historyId: ${params.historyId || '无'}`);
 
         try {
+            // 确定bot来源并获取正确的API类型
+            const apiType = await this.getBotApiType(params.bot_id);
+            this.logger.log(`确定bot_id ${params.bot_id}的API类型为: ${apiType}`);
+
             // 获取access token
-            const accessToken = await this.cozeAuthService.getAccessToken(params.user?.userId || 0);
+            const accessToken = await this.cozeAuthService.getAccessToken(params.user?.userId || 0, apiType);
+
+            // 获取正确的baseURL
+            const baseURL = apiType === CozeApiType.CN ? COZE_CN_BASE_URL : COZE_COM_BASE_URL;
+            this.logger.log(`使用API端点: ${baseURL}`);
 
             // 创建CozeAPI实例
             const cozeClient = new CozeAPI({
-                baseURL: COZE_CN_BASE_URL,
+                baseURL,
                 token: accessToken,
             });
 
@@ -376,22 +442,29 @@ export class CozeService implements OnModuleInit, OnModuleDestroy {
         }
     }
 
-    // 获取智能体列表
-    async getBotsList() {
+    // 从特定来源获取bots列表
+    private async getBotsFromSource(apiType: CozeApiType): Promise<any[]> {
         try {
-            this.logger.log('开始获取智能体列表');
+            this.logger.log(`开始从${apiType}获取智能体列表`);
             
             // 获取access token，使用0作为userId，表示系统级操作
-            const accessToken = await this.cozeAuthService.getAccessToken(0);
+            const accessToken = await this.cozeAuthService.getAccessToken(0, apiType);
             
             // 从环境变量获取space_id
-            const spaceId = process.env.COZE_SPACE_ID;
+            const spaceIdEnvVar = apiType === CozeApiType.CN ? 'COZE_SPACE_ID_CN' : 'COZE_SPACE_ID_COM';
+            const spaceId = process.env[spaceIdEnvVar];
+            // console.log('spaceId', spaceId);
+            
             if (!spaceId) {
-                throw new Error('未配置COZE_SPACE_ID环境变量');
+                this.logger.warn(`未配置${spaceIdEnvVar}环境变量`);
+                return [];
             }
             
+            // 获取正确的baseURL
+            const baseURL = apiType === CozeApiType.CN ? COZE_CN_BASE_URL : COZE_COM_BASE_URL;
+            
             // 调用Coze API获取智能体列表
-            const response = await axios.get(`${COZE_CN_BASE_URL}/v1/space/published_bots_list`, {
+            const response = await axios.get(`${baseURL}/v1/space/published_bots_list`, {
                 params: {
                     space_id: spaceId
                 },
@@ -400,13 +473,55 @@ export class CozeService implements OnModuleInit, OnModuleDestroy {
                     'Content-Type': 'application/json'
                 }
             });
+            // console.log('response', response.data);
+            if (response.data && response.data.data) {
+                const botsList = response.data.data.space_bots || [];
+                
+                // 给每个bot添加来源标记
+                const botsWithSource = botsList.map(bot => ({
+                    ...bot,
+                    source: apiType // 添加来源标记
+                }));
+                
+                this.logger.log(`从${apiType}获取了${botsWithSource.length}个智能体`);
+                
+                // 更新缓存
+                botsWithSource.forEach(bot => {
+                    this.botSourceCache.set(bot.id, apiType);
+                });
+                
+                return botsWithSource;
+            }
             
-            this.logger.log('获取智能体列表成功');
+            return [];
+        } catch (error) {
+            this.logger.error(`从${apiType}获取智能体列表失败:`, error);
+            return [];
+        }
+    }
+
+    // 获取所有智能体列表
+    async getBotsList() {
+        try {
+            this.logger.log('开始获取所有智能体列表');
+            
+            // 获取CN和COM的机器人列表
+            const comBots = await this.getBotsFromSource(CozeApiType.COM);
+            const cnBots = await this.getBotsFromSource(CozeApiType.CN);
+            
+            // 合并结果
+            const allBots = [...comBots, ...cnBots];
+            
+            this.logger.log(`获取智能体列表成功，共${allBots.length}个智能体`);
             
             return {
                 isSuccess: true,
                 message: '获取智能体列表成功',
-                data: response.data
+                data: {
+                    data: {
+                        space_bots: allBots
+                    }
+                }
             };
         } catch (error) {
             this.logger.error('获取智能体列表失败:', error);

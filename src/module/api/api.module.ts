@@ -19,6 +19,8 @@ import { UserAssets } from 'src/entities/userAssets/userAssets.entity';
 import { UserPoints } from 'src/entities/userAssets/userPoints.entity';
 import { UserMembership } from 'src/entities/userAssets/userMembership.entity';
 import { UserPremiumFeature } from 'src/entities/userAssets/userPremiumFeature.entity';
+import { AsrController } from './controller/asr/asr.controller';
+import { AsrService } from './service/asr/asr.service';
 
 @Module({
   imports: [
@@ -34,8 +36,8 @@ import { UserPremiumFeature } from 'src/entities/userAssets/userPremiumFeature.e
       UserPremiumFeature
     ])
   ],
-  controllers: [ApiController, PayController],
-  providers: [UploadService, IsimgService, DatatransService, MeituautoService, ChatqwenService, AlimsgService, PayService, UserAssetsService],
+  controllers: [ApiController, PayController, AsrController],
+  providers: [UploadService, IsimgService, DatatransService, MeituautoService, ChatqwenService, AlimsgService, PayService, UserAssetsService, AsrService],
   exports: [UploadService, ChatqwenService, MeituautoService, AlimsgService],
 })
 export class ApiModule {}

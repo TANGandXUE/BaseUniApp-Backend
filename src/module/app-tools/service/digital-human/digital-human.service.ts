@@ -79,7 +79,7 @@ export class DigitalHumanService {
         userPoints: number;
     }, appId: number) {
         let retryCount = 0;
-        const maxRetries = 100;
+        const maxRetries = 500;
         const interval = 3000; // 3秒
 
         const poll = async () => {
@@ -133,12 +133,12 @@ export class DigitalHumanService {
                     // 任务成功
                     await this.taskRecordsService.updateTaskRecord({
                         historyId,
-                        historyStatus: 'success',
+                        historyStatus: 'completed',
                         historyUseTime: retryCount * interval,
                         historyResult: [{
                             taskId,
                             status,
-                            videoUrl: responseData.data.videoUrl,
+                            outputUrl: responseData.data.videoUrl,
                             duration: responseData.data.duration,
                             subtitleFileUrl: responseData.data.subtitleFileUrl
                         }]
@@ -525,6 +525,7 @@ export class DigitalHumanService {
         userEmail: string;
         userPoints: number;
     }, appId: number): Promise<any> {
+        console.log('提交视频任务', params, user, appId);
         try {
             // 检查余额是否充足
             const appList = await this.appListService.getPublicAppList();

@@ -1,4 +1,4 @@
 import { Controller } from '@nestjs/common';
 
 @Controller('pixverse')
-export class PixverseController {}
+export class PixverseController { }

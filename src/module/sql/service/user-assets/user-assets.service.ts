@@ -42,7 +42,7 @@ export class UserAssetsService {
       });
 
       const result = await this.userAssetsRepo.save(assets);
-      console.log("用户资产初始化成功: ", result);
+      // console.log("用户资产初始化成功: ", result);
       return result;
     } catch (error) {
       console.error('初始化用户资产失败：', error);
@@ -97,7 +97,7 @@ export class UserAssetsService {
       });
 
       const result = await pointsRepo.save(points);
-      console.log("积分添加成功: ", result);
+      // console.log("积分添加成功: ", result);
       return result;
     } catch (error) {
       console.error('添加积分失败：', error);
@@ -107,6 +107,7 @@ export class UserAssetsService {
 
   // 消费积分
   async consumePoints(userId: number, amount: number): Promise<void> {
+    // console.log(`[扣点实现] 开始处理用户${userId}的积分消费，消费数量: ${amount}`);
     return this.dataSource.transaction(async manager => {
       // 查询条件增加过期时间检查
       const points = await manager.find(UserPoints, {
@@ -117,9 +118,18 @@ export class UserAssetsService {
         order: { userPointsExpireDate: 'ASC' }
       });
 
+      // console.log(`[扣点实现] 用户${userId}当前有效的积分记录:`, points.map(p => ({
+      //   id: p.userPointsId,
+      //   amount: p.userPointsAmount,
+      //   expireDate: p.userPointsExpireDate
+      // })));
+
       // 计算总可用积分
       const total = points.reduce((sum, p) => sum + p.userPointsAmount, 0);
-      if (total < amount) throw new Error('积分不足');
+      if (total < amount) {
+        // console.log(`[扣点实现] 用户${userId}积分不足，需要: ${amount}, 实际可用: ${total}`);
+        throw new Error('积分不足');
+      }
 
       // 按顺序扣除
       let remaining = amount;
@@ -128,14 +138,30 @@ export class UserAssetsService {
         p.userPointsAmount -= deduct;
         remaining -= deduct;
 
+        // console.log(`[扣点实现] 用户${userId}从积分记录${p.userPointsId}中扣除${deduct}点，剩余${p.userPointsAmount}点，过期时间: ${p.userPointsExpireDate}`);
+
         if (p.userPointsAmount === 0) {
           await manager.remove(p); // 完全扣除后删除记录
+          // console.log(`[扣点实现] 用户${userId}的积分记录${p.userPointsId}已完全扣除，删除记录`);
         } else {
-          await manager.save(p); // 部分扣除后更新记录
+          // 只更新点数，不修改到期时间
+          await manager.update(UserPoints, p.userPointsId, {
+            userPointsAmount: p.userPointsAmount,
+            userPointsExpireDate: p.userPointsExpireDate
+          });
+          
+          // 查询更新后的结果
+          const updatedRecord = await manager.findOne(UserPoints, {
+            where: { userPointsId: p.userPointsId }
+          });
+          // console.log(`[扣点实现] 更新后的积分记录: `, updatedRecord);
+          // console.log(`[扣点实现] 用户${userId}的积分记录${p.userPointsId}部分扣除，更新记录，保持过期时间不变: ${p.userPointsExpireDate}`);
         }
 
         if (remaining === 0) break;
       }
+
+      // console.log(`[扣点实现] 用户${userId}积分消费完成，共消费${amount}点`);
     });
   }
 
@@ -280,8 +306,8 @@ export class UserAssetsService {
         if (existing.userPremiumFeatureExpireDate > now) {
           // 未过期：延长有效期
           newExpiry = new Date(existing.userPremiumFeatureExpireDate.getTime() + durationMs);
-          console.log('durationMs: ', durationMs);
-          console.log("未过期，延长有效期: ", newExpiry);
+          // console.log('durationMs: ', durationMs);
+          // console.log("未过期，延长有效期: ", newExpiry);
         } else {
           // 已过期：重置有效期
           newExpiry = new Date(now.getTime() + durationMs);

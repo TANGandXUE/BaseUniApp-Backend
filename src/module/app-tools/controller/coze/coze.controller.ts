@@ -1,7 +1,7 @@
-import { Controller, Post, Body, UseGuards, Req, Get } from '@nestjs/common';
+import { Controller, Post, Body, UseGuards, Req, Get, Query } from '@nestjs/common';
 import { CozeService } from '../../service/coze/coze.service';
 import { JwtAuthGuard } from 'src/module/user/others/jwt-auth.guard';
-import { CozeAuthService } from '../../service/coze/coze-auth.service';
+import { CozeAuthService, CozeApiType } from '../../service/coze/coze-auth.service';
 
 @Controller('app-tools/coze')
 @UseGuards(JwtAuthGuard)
@@ -35,19 +35,26 @@ export class CozeController {
 
     /**
      * 获取用户的OAuth鉴权密钥，用于前端直传文件
+     * 可以通过apiType查询参数指定获取哪个API的token
      */
     @Get('access-token')
     @UseGuards(JwtAuthGuard)
-    async getAccessToken(@Req() req: any) {
+    async getAccessToken(
+        @Req() req: any,
+        @Query('apiType') apiTypeStr?: string
+    ) {
         try {
             const userId = req.user.userId;
-            const accessToken = await this.cozeAuthService.getAccessToken(userId);
+            // 如果提供了apiType，使用它，否则默认使用CN
+            const apiType = apiTypeStr === 'com' ? CozeApiType.COM : CozeApiType.CN;
+            const accessToken = await this.cozeAuthService.getAccessToken(userId, apiType);
             
             return {
                 isSuccess: true,
                 message: '获取OAuth鉴权密钥成功',
                 data: {
-                    accessToken
+                    accessToken,
+                    apiType
                 }
             };
         } catch (error) {

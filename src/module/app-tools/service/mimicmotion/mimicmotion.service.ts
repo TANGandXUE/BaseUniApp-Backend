@@ -349,7 +349,7 @@ export class MimicmotionService {
             const appCostConfig = appList.data.find(app => app.AppId === appId)?.AppCostConfig;
             const isPointsEnough = await this.sqlService.isPointsEnoughByUserId(
                 user.userId,
-                this.POINTS_PER_TASK
+                appCostConfig?.mimicmotion?.cost || this.POINTS_PER_TASK
             );
 
             if (!isPointsEnough.isSuccess) {

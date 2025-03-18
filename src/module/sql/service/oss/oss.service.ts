@@ -25,7 +25,7 @@ export class OssService {
         accessKeyId: process.env.OSS_ACCESS_KEY_ID, // 确保已设置环境变量OSS_ACCESS_KEY_ID。
         accessKeySecret: process.env.OSS_ACCESS_KEY_SECRET, // 确保已设置环境变量OSS_ACCESS_KEY_SECRET。
         bucket: process.env.OSS_BUCKET, // 示例：'my-bucket-name'，填写存储空间名称。
-        dir: "img/",
+        dir: "userUpload/", // 示例：'userUpload/'，填写文件上传目录，以'/'结尾。
     }
     max_file_size: number = Number(process.env.OSS_MAX_FILE_SIZE || 1048576000);
 

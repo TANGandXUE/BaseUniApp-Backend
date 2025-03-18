@@ -79,7 +79,7 @@ export class SqlService {
 
                 // 1. 先创建用户基本信息
                 const userCount = await manager.count(UserInfo);
-                console.log("当前用户数量: ", userCount);
+                // console.log("当前用户数量: ", userCount);
 
                 // 生成随机邀请码
                 const generateInviteCode = () => {
@@ -108,9 +108,9 @@ export class SqlService {
                     
                     if (inviter) {
                         userInfo.userBeInvitedUserId = inviter.userId; // 设置邀请人的用户ID
-                        console.log(`找到邀请人ID: ${inviter.userId}`);
+                        // console.log(`找到邀请人ID: ${inviter.userId}`);
                     } else {
-                        console.log(`未找到对应邀请码的用户: ${registerInfos.userBeInvitedCode}`);
+                        // console.log(`未找到对应邀请码的用户: ${registerInfos.userBeInvitedCode}`);
                     }
                 }
 
@@ -236,7 +236,7 @@ export class SqlService {
 
         // 检查用户是否存在
         if (!basicInfos) {
-            console.log("用户不存在");
+            // console.log("用户不存在");
             return { isSuccess: false, message: '用户不存在' };
         } else {
             return { isSuccess: true, message: '获取用户信息成功', data: userInfos };
@@ -270,57 +270,73 @@ export class SqlService {
 
     // 判断点数够不够(通过用户ID)
     async isPointsEnoughByUserId(userId: number, deductPoints: number) {
-        // console.log('userId: ', userId);
+        // console.log(`[扣点流程] 开始检查用户${userId}点数是否足够，需要扣除: ${deductPoints}`);
         let userToGet = await this.userInfoRepository.findOne({ where: { userId } });
         let userPoints = await this.userAssetsService.getAvailablePoints(userId);
 
         // 检查用户是否存在
         if (!userToGet) {
-            console.log("用户不存在");
+            // console.log(`[扣点流程] 用户${userId}不存在`);
             return { isSuccess: false, message: '用户不存在' };
         }
 
-
-        // console.log("扣除点数: ", deductPoints);
-        // console.log('userToGet.userPoints: ', userToGet.userPoints);
-        // console.log('剩余点数: ', userToGet.userPoints - deductPoints);
-        // console.log('最低点数: ', minPointsAfterDeduct);
-        // console.log('计算结果: ', (userToGet.userPoints - deductPoints) < minPointsAfterDeduct);
+        // console.log(`[扣点流程] 用户${userId}当前可用点数: ${userPoints}`);
 
         if (userPoints - deductPoints < minPointsAfterDeduct)
             return { isSuccess: false, message: '点数不足', data: userPoints }
         else {
             return { isSuccess: true, message: '点数充足', data: userPoints };
         }
-
     }
 
     // 扣除点数
     async deductPoints(userId: number, pointsToDeduct: number) {
-        // 扣除点数
-        const result = await this.userAssetsService.consumePoints(userId, pointsToDeduct);
-        // console.log("扣点成功: ", userToUpdate);
-        return { isSuccess: true, message: '扣点成功', data: result };
+        // console.log(`[扣点流程] 开始执行用户${userId}的扣点操作，扣除点数: ${pointsToDeduct}`);
+        try {
+            // 扣除点数
+            await this.userAssetsService.consumePoints(userId, pointsToDeduct);
+            // console.log(`[扣点流程] 用户${userId}扣点完成`);
+            return { 
+                isSuccess: true, 
+                message: '扣点成功', 
+                data: { 
+                    userId,
+                    deductedPoints: pointsToDeduct,
+                    timestamp: new Date().toISOString()
+                }
+            };
+        } catch (error) {
+            console.error(`[扣点流程] 用户${userId}扣点失败:`, error);
+            return { 
+                isSuccess: false, 
+                message: error.message || '扣点失败', 
+                data: null 
+            };
+        }
     }
 
     // 包含检测用户是否点数足够的扣除点数
     async deductPointsWithCheck(user: {
         userId: number;
     }, pointsToDeduct: number) {
+        // console.log(`[扣点流程] 开始用户${user.userId}的扣点检查流程，需要扣除: ${pointsToDeduct}`);
         try {
             const isPointsEnough = await this.isPointsEnoughByUserId(user.userId, pointsToDeduct);
             if (isPointsEnough.isSuccess) {
                 try {
-                    return await this.deductPoints(user.userId, pointsToDeduct);
+                    const result = await this.deductPoints(user.userId, pointsToDeduct);
+                    // console.log(`[扣点流程] 用户${user.userId}扣点成功:`, result);
+                    return result;
                 } catch (error) {
-                    console.error('扣除点数失败: ', error);
+                    console.error(`[扣点流程] 用户${user.userId}扣点失败:`, error);
                     return { isSuccess: false, message: '扣除点数失败' };
                 }
             } else {
+                // console.log(`[扣点流程] 用户${user.userId}点数不足，扣点失败`);
                 return { isSuccess: false, message: '点数不足，扣除失败' };
             }
         } catch (error) {
-            console.error('扣除点数失败: ', error);
+            console.error(`[扣点流程] 用户${user.userId}扣点过程发生异常:`, error);
             return { isSuccess: false, message: '扣除点数失败' };
         }
     }

@@ -12,7 +12,10 @@ import { parse } from 'url';
 export class CozeGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @WebSocketServer() server: WebSocket.Server;
     private readonly logger = new Logger(CozeGateway.name);
-    private clientHistories: Map<WebSocket, { historyId?: number }> = new Map();
+    private clientHistories: Map<WebSocket, { 
+        historyId?: number;
+        botIdCache?: string; // 缓存当前对话使用的bot_id
+    }> = new Map();
 
     constructor(private readonly cozeService: CozeService) { }
 
@@ -82,6 +85,11 @@ export class CozeGateway implements OnGatewayConnection, OnGatewayDisconnect {
                 
                 this.logger.log(`客户端 [${clientId}] 发送消息: bot_id=${bot_id}, 消息长度=${userMessage?.length || 0}, 历史ID=${requestHistoryId || '无'}`);
                 this.logger.log(`收到WebSocket消息: bot_id=${bot_id}, 前端传递的historyId=${requestHistoryId}, 当前clientState.historyId=${clientState?.historyId}`);
+
+                // 存储当前使用的bot_id
+                if (bot_id) {
+                    clientState.botIdCache = bot_id;
+                }
 
                 // 如果是新对话（没有historyId）或明确要求新对话
                 if (data.newConversation) {

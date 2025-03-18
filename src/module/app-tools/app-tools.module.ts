@@ -36,6 +36,8 @@ import { ApiService } from './service/chat/api/api.service';
 import { ApiKey } from 'src/entities/apps/chat/apiKey.entity';
 import { ApiChatController } from './controller/chat/api-chat/api-chat.controller';
 import { ApiChatService } from './service/chat/api-chat/api-chat.service';
+import { LtxvideoController } from './controller/ltxvideo/ltxvideo.controller';
+import { LtxvideoService } from './service/ltxvideo/ltxvideo.service';
 
 @Module({
   imports: [
@@ -44,7 +46,7 @@ import { ApiChatService } from './service/chat/api-chat/api-chat.service';
     TypeOrmModule.forFeature([Apps, HistoryInfo, WechatOfficial, Knowledge, ApiKey]),
     HttpModule
   ],
-  controllers: [DigitalHumanController, FacefusionController, ChatController, MimicmotionController, CosyvoiceController, WechatArticleExporterController, CozeController, KnowledgeController, SearchController, PixverseController, ApiController, ApiChatController],
+  controllers: [DigitalHumanController, FacefusionController, ChatController, MimicmotionController, CosyvoiceController, WechatArticleExporterController, CozeController, KnowledgeController, SearchController, PixverseController, ApiController, ApiChatController, LtxvideoController],
   providers: [
     DigitalHumanService, 
     AppListService, 
@@ -61,7 +63,8 @@ import { ApiChatService } from './service/chat/api-chat/api-chat.service';
     SearchService,
     PixverseService,
     ApiService,
-    ApiChatService
+    ApiChatService,
+    LtxvideoService
   ],
   exports: [CozeService]
 })
