@@ -283,6 +283,8 @@ export class CozeService implements OnModuleInit, OnModuleDestroy {
             // 获取access token
             const accessToken = await this.cozeAuthService.getAccessToken(params.user?.userId || 0, apiType);
 
+            console.log('accessToken', accessToken);
+
             // 获取正确的baseURL
             const baseURL = apiType === CozeApiType.CN ? COZE_CN_BASE_URL : COZE_COM_BASE_URL;
             this.logger.log(`使用API端点: ${baseURL}`);
@@ -510,7 +512,7 @@ export class CozeService implements OnModuleInit, OnModuleDestroy {
             const cnBots = await this.getBotsFromSource(CozeApiType.CN);
             
             // 合并结果
-            const allBots = [...comBots, ...cnBots];
+            const allBots = [...cnBots, ...comBots];
             
             this.logger.log(`获取智能体列表成功，共${allBots.length}个智能体`);
             
