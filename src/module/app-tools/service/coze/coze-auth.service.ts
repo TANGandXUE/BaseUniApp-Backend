@@ -89,7 +89,7 @@ export class CozeAuthService {
 
     public async getAccessToken(userId: number, apiType: CozeApiType = CozeApiType.CN): Promise<string> {
         const constants = this.getApiConstants(apiType);
-        console.log('constants', constants);
+        // console.log('constants', constants);
         const now = Math.floor(Date.now() / 1000);
         const sessionName = userId.toString();
 

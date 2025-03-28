@@ -5,6 +5,8 @@ import { HistoryInfo } from 'src/entities/historyInfo.entity';
 import { CozeAuthService, CozeApiType } from './coze-auth.service';
 import { DEFAULT_COZE_BOT_ID_CN, DEFAULT_COZE_BOT_ID_COM } from '../../config/coze.constants';
 import axios from 'axios';
+import { SqlService } from '../../../sql/service/sql/sql.service';
+import { AppListService } from '../../../apps/service/app-list/app-list.service';
 
 @Injectable()
 export class CozeService implements OnModuleInit, OnModuleDestroy {
@@ -18,10 +20,14 @@ export class CozeService implements OnModuleInit, OnModuleDestroy {
     private cleanupInterval: NodeJS.Timeout;
     // 缓存机器人来源信息
     private botSourceCache: Map<string, CozeApiType> = new Map();
+    // 默认每次对话消耗的点数
+    private readonly POINTS_PER_CHAT = 1;
 
     constructor(
         private readonly taskRecordsService: TaskRecordsService,
-        private readonly cozeAuthService: CozeAuthService
+        private readonly cozeAuthService: CozeAuthService,
+        private readonly sqlService: SqlService,
+        private readonly appListService: AppListService
     ) { }
 
     onModuleInit() {
@@ -167,7 +173,7 @@ export class CozeService implements OnModuleInit, OnModuleDestroy {
         return { historyId, isNew: !this.chatHistories.has(historyId) };
     }
 
-    // 更新对话历史记录
+    // 更新对话历史记录并计费
     private async updateChatHistory(historyId: number, message: { role: string; content: string }) {
         this.logger.log(`准备更新对话历史, historyId: ${historyId}`);
         this.logger.log('新消息:', message);
@@ -211,8 +217,50 @@ export class CozeService implements OnModuleInit, OnModuleDestroy {
             this.logger.log(`准备更新到数据库的数据, 消息数量: ${updateData.historyResult.length}`);
             await this.taskRecordsService.updateTaskRecord(updateData);
             this.logger.log(`历史记录更新成功, historyId: ${historyId}`);
+
+            // 如果是助手消息（模型回复），则需要计费
+            if (message.role === 'assistant') {
+                await this.deductPointsForChat(historyId, existingRecord.historyUserId);
+            }
         } else {
             this.logger.warn(`警告: 内存中未找到对应的历史记录, historyId: ${historyId}`);
+        }
+    }
+
+    // 扣除用户点数
+    private async deductPointsForChat(historyId: number, userId: number) {
+        try {
+            // 获取用户信息
+            const userInfo = await this.sqlService.getUserInfos(userId);
+            if (!userInfo || !userInfo.isSuccess || !userInfo.data) {
+                this.logger.warn(`未找到用户信息，无法扣除点数，用户ID: ${userId}`);
+                return;
+            }
+
+            // 获取应用计费配置
+            const appList = await this.appListService.getPublicAppList();
+            const appId = 8; // Coze应用的historyAppId是8
+            const appCostConfig = appList.data.find(app => app.AppId === appId)?.AppCostConfig;
+            const pointsToDeduct = appCostConfig?.generateText?.cost || this.POINTS_PER_CHAT || 20;
+
+            // 记录日志
+            this.logger.log(`[Coze对话${historyId}] 开始扣除用户点数:`, {
+                userId,
+                pointsToDeduct,
+                appId
+            });
+
+            // 扣除点数
+            const user = {
+                userId,
+                userPhone: userInfo.data.userPhone,
+                userEmail: userInfo.data.userEmail,
+                userPoints: userInfo.data.userPoints
+            };
+            const deductResult = await this.sqlService.deductPointsWithCheck(user, pointsToDeduct);
+            this.logger.log(`[Coze对话${historyId}] 扣除点数结果:`, deductResult);
+        } catch (error) {
+            this.logger.error(`扣除用户点数失败:`, error);
         }
     }
 
@@ -276,6 +324,27 @@ export class CozeService implements OnModuleInit, OnModuleDestroy {
         this.logger.log(`streamChat 开始处理, 传入的 historyId: ${params.historyId || '无'}`);
 
         try {
+            // 检查用户点数是否足够
+            if (params.user) {
+                // 获取应用计费配置
+                const appList = await this.appListService.getPublicAppList();
+                const appId = 8; // Coze应用的historyAppId是8
+                const appCostConfig = appList.data.find(app => app.AppId === appId)?.AppCostConfig;
+                const pointsToDeduct = appCostConfig?.generateText?.cost || this.POINTS_PER_CHAT || 20;
+                
+                // 检查点数是否足够
+                const isPointsEnough = await this.sqlService.isPointsEnoughByUserId(
+                    params.user.userId,
+                    pointsToDeduct
+                );
+                
+                if (!isPointsEnough.isSuccess) {
+                    this.logger.warn(`用户${params.user.userId}点数不足，需要${pointsToDeduct}点，当前可用点数：${isPointsEnough.data}`);
+                    // 直接抛出错误，让上层的错误处理机制处理
+                    throw new Error('余额不足');
+                }
+            }
+
             // 确定bot来源并获取正确的API类型
             const apiType = await this.getBotApiType(params.bot_id);
             this.logger.log(`确定bot_id ${params.bot_id}的API类型为: ${apiType}`);
@@ -371,6 +440,7 @@ export class CozeService implements OnModuleInit, OnModuleDestroy {
                                                 role: 'assistant',
                                                 content: history.currentAssistantMessage
                                             });
+                                            // 此处调用updateChatHistory已经会处理计费逻辑，不需要额外调用
                                             history.currentAssistantMessage = '';
                                         }
                                         // 确保在对话完成时调用completeChatHistory
@@ -532,6 +602,49 @@ export class CozeService implements OnModuleInit, OnModuleDestroy {
                 message: '获取智能体列表失败，原因：' + error.message,
                 data: null
             };
+        }
+    }
+
+    // 在连接断开时处理对话并根据需要计费
+    async handleDisconnect(historyId: number) {
+        const history = this.chatHistories.get(historyId);
+        if (!history) {
+            this.logger.warn(`处理断开连接: 历史记录不存在, historyId: ${historyId}`);
+            return;
+        }
+
+        try {
+            // 如果模型已经有回复内容，则进行计费
+            if (history.currentAssistantMessage && history.currentAssistantMessage.trim().length > 0) {
+                this.logger.log(`连接断开时模型已有回复内容(${history.currentAssistantMessage.length}字符), 进行计费`);
+                
+                // 获取数据库中的记录以获取用户ID
+                const existingRecord = await this.taskRecordsService.getTaskRecordById(historyId);
+                if (existingRecord) {
+                    // 保存当前的回复内容到历史记录
+                    history.messages.push({
+                        role: 'assistant',
+                        content: history.currentAssistantMessage,
+                        timestamp: Date.now()
+                    });
+                    
+                    // 执行扣费
+                    await this.deductPointsForChat(historyId, existingRecord.historyUserId);
+                }
+            } else {
+                this.logger.log(`连接断开时模型无回复内容，不计费`);
+            }
+            
+            // 调用完成对话方法
+            await this.completeChatHistory(historyId);
+        } catch (error) {
+            this.logger.error(`处理断开连接时出错:`, error);
+            // 即使出错，也尝试完成对话
+            try {
+                await this.completeChatHistory(historyId);
+            } catch (e) {
+                this.logger.error(`完成对话失败:`, e);
+            }
         }
     }
 }

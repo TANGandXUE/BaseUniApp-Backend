@@ -193,13 +193,13 @@ export class CozeGateway implements OnGatewayConnection, OnGatewayDisconnect {
         const user = (client as any).user;
         this.logger.log(`客户端 [${clientId}] 断开连接，用户ID: ${user?.userId || '未知'}, 关闭代码: ${(client as any).closeCode || '未知'}, 关闭原因: ${(client as any).closeReason || '未知'}`);
         
-        // 当客户端断开连接时，完成当前对话并清理状态
+        // 当客户端断开连接时，处理当前对话并根据需要计费
         const clientState = this.clientHistories.get(client);
         if (clientState?.historyId) {
-            this.logger.log(`客户端 [${clientId}] 断开连接，尝试完成对话，historyId: ${clientState.historyId}`);
-            this.cozeService.completeChatHistory(clientState.historyId)
-                .then(() => this.logger.log(`客户端 [${clientId}] 的对话历史已成功完成，historyId: ${clientState.historyId}`))
-                .catch(error => this.logger.error(`客户端 [${clientId}] 完成对话历史时出错:`, error));
+            this.logger.log(`客户端 [${clientId}] 断开连接，处理对话，historyId: ${clientState.historyId}`);
+            this.cozeService.handleDisconnect(clientState.historyId)
+                .then(() => this.logger.log(`客户端 [${clientId}] 的对话历史已成功处理，historyId: ${clientState.historyId}`))
+                .catch(error => this.logger.error(`客户端 [${clientId}] 处理对话历史时出错:`, error));
         }
 
         // 清除心跳检测
