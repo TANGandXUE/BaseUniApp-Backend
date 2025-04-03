@@ -538,7 +538,8 @@ export class CozeService implements OnModuleInit, OnModuleDestroy {
             // 调用Coze API获取智能体列表
             const response = await axios.get(`${baseURL}/v1/space/published_bots_list`, {
                 params: {
-                    space_id: spaceId
+                    space_id: spaceId,
+                    page_size: 1000000
                 },
                 headers: {
                     'Authorization': `Bearer ${accessToken}`,
@@ -580,9 +581,18 @@ export class CozeService implements OnModuleInit, OnModuleDestroy {
             // 获取CN和COM的机器人列表
             const comBots = await this.getBotsFromSource(CozeApiType.COM);
             const cnBots = await this.getBotsFromSource(CozeApiType.CN);
+
+            // 输出CN来源的机器人列表
+            this.logger.log('CN来源的机器人列表:', cnBots);
+            
+            // 替换COM来源的机器人的icon_url
+            const processedComBots = comBots.map(bot => ({
+                ...bot,
+                icon_url: 'https://clouddreamai.com/assets/app-logos/chat/default_bot_logo.png'
+            }));
             
             // 合并结果
-            const allBots = [...cnBots, ...comBots];
+            const allBots = [...cnBots, ...processedComBots];
             
             this.logger.log(`获取智能体列表成功，共${allBots.length}个智能体`);
             

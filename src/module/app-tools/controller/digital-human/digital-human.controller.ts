@@ -58,6 +58,20 @@ export class DigitalHumanController {
         return await this.digitalHumanService.adv_queryTaskStatusFromSQL(req.body.taskId, req.user.userId);
     }
 
+    // 123数字人-提交任务
+    @Post('123-start')
+    @UseGuards(JwtAuthGuard)
+    async _123_submitVideoTask(@Body() params: any, @Req() req: any): Promise<any> {
+        return await this.digitalHumanService._123_submitVideoTask(params, req.user, 20);
+    }
+
+    // 123数字人-获取任务状态
+    @Post('123-query')
+    @UseGuards(JwtAuthGuard)
+    async _123_queryTaskStatus(@Req() req: any): Promise<any> {
+        return await this.digitalHumanService._123_queryTaskStatusFromSQL(req.body.taskId, req.user.userId);
+    }
+
     // 高级数字人-获取模板列表
     @Get('adv-template-list')
     adv_template_list() {

@@ -24,7 +24,7 @@ export class UserInfo {
   @Column({ type: "varchar", nullable: true })
   userEmail: string;
 
-  //用户状态
+  //用户状态  normal:正常  disabled:封禁
   @Column({ type: "varchar" })
   userStatus: string;
 
@@ -51,6 +51,14 @@ export class UserInfo {
   // 用户自己的邀请码
   @Column({ type: "varchar", nullable: true })
   userInviteCode: string;
+
+  // 用户是否是代理商
+  @Column({ type: "boolean", default: false })
+  userIsAgent: boolean;
+
+  // 用户代理倍率
+  @Column({ type: "float", default: 0.01 })
+  userAgentRate: number;
 
   @OneToOne(() => UserAssets, assets => assets.user)
   assets: UserAssets;

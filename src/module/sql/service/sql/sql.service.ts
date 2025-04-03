@@ -11,6 +11,7 @@ import * as dotenv from 'dotenv';
 import { ShopItems } from 'src/entities/shopItems.entity';
 import { UserAssetsService } from 'src/module/sql/service/user-assets/user-assets.service';
 import { UserAssets } from 'src/entities/userAssets/userAssets.entity';
+import { UserMembership } from 'src/entities/userAssets/userMembership.entity';
 import { DataSource } from 'typeorm';
 dotenv.config();
 
@@ -137,6 +138,49 @@ export class SqlService {
                 const result = await this.userAssetsService.addPoints(savedUser.userId, initUserPoints, 10 * 365 * 86400 * 1000, manager);
 
                 console.log("初始化积分成功: ", result);
+
+                // 5. 赠送3天超级会员
+                const membershipDuration = 3 * 24 * 60 * 60 * 1000; // 3天的毫秒数
+                const membershipLevel = 2; // 假设2是超级会员等级
+                
+                // 直接获取资产对象
+                const userAssets = await manager.findOne(UserAssets, {
+                    where: { user: { userId: savedUser.userId } },
+                    relations: ['user']
+                });
+                
+                // 处理当前等级
+                const now = Date.now();
+                const MAX_TIMESTAMP = new Date(2147483647 * 1000);
+                
+                // 使用manager处理数据库操作，避免嵌套事务
+                const existing = await manager.findOne(UserMembership, {
+                    where: { 
+                        user: { userId: savedUser.userId }, 
+                        userMembershipLevel: membershipLevel 
+                    }
+                });
+                
+                // 计算新到期时间
+                const baseTime = existing ? existing.userMembershipExpireDate.getTime() : now;
+                let newExpiry = new Date(baseTime + membershipDuration);
+                if (newExpiry.getTime() > MAX_TIMESTAMP.getTime()) {
+                    newExpiry = MAX_TIMESTAMP;
+                }
+                
+                if (existing) {
+                    existing.userMembershipExpireDate = newExpiry;
+                    await manager.save(existing);
+                } else {
+                    const newRecord = manager.create(UserMembership, {
+                        userMembershipLevel: membershipLevel,
+                        userMembershipExpireDate: newExpiry,
+                        user: userAssets
+                    });
+                    await manager.save(newRecord);
+                }
+                
+                console.log("赠送3天超级会员成功");
 
                 return { isRegister: true, message: '注册成功' };
             } catch (error) {
@@ -416,7 +460,9 @@ export class SqlService {
             userAvatarUrl: user.userAvatarUrl,
             userIsAdmin: user.userIsAdmin,
             userInviteCode: user.userInviteCode,
-            userBeInvitedUserId: user.userBeInvitedUserId
+            userBeInvitedUserId: user.userBeInvitedUserId,
+            userIsAgent: user.userIsAgent,
+            userAgentRate: user.userAgentRate
         };
 
         // 下面这行这是官方文档的写法，但被证明是错误的了，所以更新了写法

@@ -38,6 +38,8 @@ import { ApiChatController } from './controller/chat/api-chat/api-chat.controlle
 import { ApiChatService } from './service/chat/api-chat/api-chat.service';
 import { LtxvideoController } from './controller/ltxvideo/ltxvideo.controller';
 import { LtxvideoService } from './service/ltxvideo/ltxvideo.service';
+import { CosyvoiceAliyunController } from './controller/cosyvoice-aliyun/cosyvoice-aliyun.controller';
+import { CosyvoiceAliyunService } from './service/cosyvoice-aliyun/cosyvoice-aliyun.service';
 
 @Module({
   imports: [
@@ -46,7 +48,7 @@ import { LtxvideoService } from './service/ltxvideo/ltxvideo.service';
     TypeOrmModule.forFeature([Apps, HistoryInfo, WechatOfficial, Knowledge, ApiKey]),
     HttpModule
   ],
-  controllers: [DigitalHumanController, FacefusionController, ChatController, MimicmotionController, CosyvoiceController, WechatArticleExporterController, CozeController, KnowledgeController, SearchController, PixverseController, ApiController, ApiChatController, LtxvideoController],
+  controllers: [DigitalHumanController, FacefusionController, ChatController, MimicmotionController, CosyvoiceController, WechatArticleExporterController, CozeController, KnowledgeController, SearchController, PixverseController, ApiController, ApiChatController, LtxvideoController, CosyvoiceAliyunController],
   providers: [
     DigitalHumanService, 
     AppListService, 
@@ -64,7 +66,8 @@ import { LtxvideoService } from './service/ltxvideo/ltxvideo.service';
     PixverseService,
     ApiService,
     ApiChatService,
-    LtxvideoService
+    LtxvideoService,
+    CosyvoiceAliyunService
   ],
   exports: [CozeService]
 })

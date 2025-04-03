@@ -289,4 +289,27 @@ export class PayService {
             return acc;
         }, { features: [] } as PaymentAssets);
     }
+
+    // 获取用户的累计充值金额
+    async getUserTotalPayment(userId: number): Promise<number> {
+        try {
+            // 查询指定用户的所有支付记录
+            const userPayments = await this.payRepository.find({
+                where: { payerId: userId, payerHasAdded: true }
+            });
+            
+            // 如果没有支付记录，返回0
+            if (!userPayments || userPayments.length === 0) {
+                return 0;
+            }
+            
+            // 计算累计充值金额
+            const totalAmount = userPayments.reduce((sum, payment) => sum + payment.payerPayAmount, 0);
+            
+            return parseFloat(totalAmount.toFixed(2)); // 保留两位小数
+        } catch (error) {
+            console.error('获取用户累计充值金额失败:', error);
+            return 0;
+        }
+    }
 }

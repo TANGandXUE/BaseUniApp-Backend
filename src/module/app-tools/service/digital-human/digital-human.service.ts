@@ -108,6 +108,8 @@ export class DigitalHumanService {
                     responseData = await this.vip_queryTaskStatus(taskId);
                 } else if (appId === 7) {
                     responseData = await this.adv_queryTaskStatus(taskId);
+                } else if (appId === 20) {
+                    responseData = await this._123_queryTaskStatus(taskId);
                 }
 
                 if (!responseData.isSuccess) {
@@ -130,24 +132,61 @@ export class DigitalHumanService {
 
                 if (status === 'SUCCESS') {
                     console.log(`[数字人任务${taskId}] 任务成功完成`);
+                    
+                    // 确保duration是必然存在的
+                    const duration = responseData.data.duration;
+                    if (!duration) {
+                        console.log(`[数字人任务${taskId}] 任务成功但缺少duration参数`);
+                        await this.taskRecordsService.updateTaskRecord({
+                            historyId,
+                            historyStatus: 'failed',
+                            historyUseTime: retryCount * interval,
+                            historyErrorInfos: [{
+                                errorMessage: '任务成功但缺少视频时长信息(duration)',
+                                errorDetails: JSON.stringify(responseData.data)
+                            }]
+                        });
+                        return;
+                    }
+                    
+                    
+                    // 获取应用的计费配置
+                    const appList = await this.appListService.getPublicAppList();
+                    const appCostConfig = appList.data.find(app => app.AppId === appId)?.AppCostConfig;
+                    const baseCostPerSecond = appCostConfig?.generateVideo?.cost || 10; // 默认每秒10点
+                    
+                    // 将duration从毫秒转换为秒，计算最终点数
+                    const durationInSeconds = Math.ceil(duration / 1000);
+                    const pointsToDeduct = durationInSeconds * baseCostPerSecond;
+                    
+                    console.log(`[数字人任务${taskId}] 开始按时长扣除用户点数:`, {
+                        userId: user.userId,
+                        duration,
+                        durationInSeconds,
+                        baseCostPerSecond,
+                        pointsToDeduct,
+                        appId
+                    });
+                    
+                    // 扣除点数
+                    const deductResult = await this.sqlService.deductPointsWithCheck(user, pointsToDeduct);
+                    console.log(`[数字人任务${taskId}] 扣除点数结果:`, deductResult);
+                    
                     // 任务成功
                     await this.taskRecordsService.updateTaskRecord({
                         historyId,
                         historyStatus: 'completed',
                         historyUseTime: retryCount * interval,
+                        historyUsePoints: pointsToDeduct,
                         historyResult: [{
                             taskId,
                             status,
                             outputUrl: responseData.data.videoUrl,
-                            duration: responseData.data.duration,
+                            duration: duration,
                             subtitleFileUrl: responseData.data.subtitleFileUrl
                         }]
                     });
-                    // 获取应用的计费配置
-                    const appList = await this.appListService.getPublicAppList();
-                    const appCostConfig = appList.data.find(app => app.AppId === appId)?.AppCostConfig;
-                    // 扣除点数
-                    console.log(await this.sqlService.deductPointsWithCheck(user, appCostConfig.generateVideo.cost));
+                    
                     return;
                 } else if (status === 'FAILED') {
                     console.log(`[数字人任务${taskId}] 任务失败: ${responseData.data.failedMessage || '未知错误'}`);
@@ -189,6 +228,115 @@ export class DigitalHumanService {
     }
 
     /**
+     * 预估所需点数
+     * @param params 任务参数
+     * @param appId 应用ID
+     * @returns 预估结果
+     */
+    private async estimatePointsNeeded(params: any, appId: number): Promise<{
+        isSuccess: boolean;
+        message: string;
+        data: {
+            estimatedDuration: number; // 预估时长(秒)
+            pointsNeeded: number; // 所需点数
+            baseCostPerSecond: number; // 每秒点数
+        } | null;
+    }> {
+        try {
+            // 获取应用的计费配置
+            const appList = await this.appListService.getPublicAppList();
+            const appCostConfig = appList.data.find(app => app.AppId === appId)?.AppCostConfig;
+            const baseCostPerSecond = appCostConfig?.generateVideo?.cost || 10; // 默认每秒10点
+            
+            let estimatedDuration = 0; // 预估时长(秒)
+            
+            // 根据驱动类型预估时长
+            if (params.driveType === 'VOICE' && params.inputAudioUrl) {
+                // 音频驱动：获取音频文件时长
+                try {
+                    const audioInfo = await this.getAudioDuration(params.inputAudioUrl);
+                    estimatedDuration = Math.ceil(audioInfo.duration);
+                    console.log(`[点数预估] 音频驱动，获取到音频时长: ${estimatedDuration}秒`);
+                } catch (error) {
+                    console.error(`[点数预估] 获取音频时长失败:`, error);
+                    // 音频时长获取失败，使用默认预估：3分钟
+                    estimatedDuration = 180;
+                    console.log(`[点数预估] 使用默认音频时长: ${estimatedDuration}秒`);
+                }
+            } else if (params.text) {
+                // 文本驱动：根据文本长度预估
+                const textLength = params.text.length;
+                // 中文每字约0.3秒，标点符号会有停顿
+                estimatedDuration = Math.ceil(textLength * 0.3);
+                
+                // 最短10秒，最长不超过30分钟(1800秒)
+                estimatedDuration = Math.max(10, Math.min(estimatedDuration, 1800));
+                console.log(`[点数预估] 文本驱动，文本长度: ${textLength}，预估时长: ${estimatedDuration}秒`);
+            } else {
+                return {
+                    isSuccess: false,
+                    message: '无法预估所需点数，请提供有效的文本或音频',
+                    data: null
+                };
+            }
+            
+            // 计算预估所需点数
+            const pointsNeeded = Math.ceil(estimatedDuration * baseCostPerSecond);
+            
+            return {
+                isSuccess: true,
+                message: '预估点数计算成功',
+                data: {
+                    estimatedDuration,
+                    pointsNeeded,
+                    baseCostPerSecond
+                }
+            };
+        } catch (error) {
+            console.error('[点数预估] 预估所需点数失败:', error);
+            return {
+                isSuccess: false,
+                message: `预估所需点数失败: ${error.message}`,
+                data: null
+            };
+        }
+    }
+    
+    /**
+     * 获取音频文件时长
+     * @param audioUrl 音频URL
+     * @returns 音频信息
+     */
+    private async getAudioDuration(audioUrl: string): Promise<{ duration: number }> {
+        try {
+            // 获取音频文件头信息
+            const response = await axios.head(audioUrl);
+            const contentLength = response.headers['content-length'];
+            const contentType = response.headers['content-type'];
+            
+            // 根据文件类型和大小粗略估算时长
+            // 这里使用简化的估算，实际应用中可能需要更精确的方法
+            if (contentType && contentType.includes('audio')) {
+                if (contentLength) {
+                    // MP3: ~128kbps = 16KB/s，估算公式: 文件大小(字节) / 16384 = 秒数
+                    const fileSizeInBytes = parseInt(contentLength);
+                    // 假设音频比特率为128kbps
+                    const bitRate = 16 * 1024; // 字节/秒
+                    const duration = fileSizeInBytes / bitRate;
+                    return { duration };
+                }
+            }
+            
+            // 如果无法通过头信息估算，返回默认值
+            return { duration: 60 }; // 默认1分钟
+        } catch (error) {
+            console.error(`获取音频时长失败:`, error);
+            // 出错时返回默认值
+            return { duration: 60 };
+        }
+    }
+
+    /**
      * 图片数字人-提交视频任务
      */
     async img_submitVideoTask(
@@ -209,15 +357,25 @@ export class DigitalHumanService {
         appId: number
     ): Promise<any> {
         try {
+            // 预估所需点数
+            const estimateResult = await this.estimatePointsNeeded(params, appId);
+            if (!estimateResult.isSuccess) {
+                return estimateResult;
+            }
+            
             // 检查余额是否充足
-            const appList = await this.appListService.getPublicAppList();
-            const appCostConfig = appList.data.find(app => app.AppId === appId)?.AppCostConfig;
-            const isPointsEnough = await this.sqlService.isPointsEnoughByUserId(user.userId, appCostConfig.generateVideo.cost);
+            const pointsNeeded = estimateResult.data.pointsNeeded;
+            const isPointsEnough = await this.sqlService.isPointsEnoughByUserId(user.userId, pointsNeeded);
             if (!isPointsEnough.isSuccess) {
                 return {
                     isSuccess: false,
-                    message: '余额不足',
-                    data: null,
+                    message: `余额不足，预估需要${pointsNeeded}点数（预估视频时长${estimateResult.data.estimatedDuration}秒，每秒${estimateResult.data.baseCostPerSecond}点）`,
+                    data: {
+                        estimatedDuration: estimateResult.data.estimatedDuration,
+                        pointsNeeded: pointsNeeded,
+                        baseCostPerSecond: estimateResult.data.baseCostPerSecond,
+                        userPoints: user.userPoints
+                    }
                 }
             }
 
@@ -240,8 +398,12 @@ export class DigitalHumanService {
                     historyStatus: 'processing',
                     historyStartTime: new Date(),
                     historyUseTime: 0,
-                    historyUsePoints: appCostConfig.generateVideo.cost,
-                    historyResult: [{ taskId: response.data.result.taskId }],
+                    historyUsePoints: 0,
+                    historyResult: [{ 
+                        taskId: response.data.result.taskId,
+                        estimatedDuration: estimateResult.data.estimatedDuration,
+                        estimatedPoints: pointsNeeded
+                    }],
                     historyErrorInfos: []
                 });
 
@@ -360,16 +522,26 @@ export class DigitalHumanService {
         userPoints: number;
     }, appId: number
     ): Promise<any> {
+        // 预估所需点数
+        const estimateResult = await this.estimatePointsNeeded(params, appId);
+        if (!estimateResult.isSuccess) {
+            return estimateResult;
+        }
+        
         // 检查余额是否充足
-        const appList = await this.appListService.getPublicAppList();
-        const appCostConfig = appList.data.find(app => app.AppId === appId)?.AppCostConfig;
-        const isPointsEnough = await this.sqlService.isPointsEnoughByUserId(user.userId, appCostConfig.generateVideo.cost);
+        const pointsNeeded = estimateResult.data.pointsNeeded;
+        const isPointsEnough = await this.sqlService.isPointsEnoughByUserId(user.userId, pointsNeeded);
         console.log('isPointsEnough', isPointsEnough);
         if (!isPointsEnough.isSuccess) {
             return {
                 isSuccess: false,
-                message: '余额不足',
-                data: null,
+                message: `余额不足，预估需要${pointsNeeded}点数（预估视频时长${estimateResult.data.estimatedDuration}秒，每秒${estimateResult.data.baseCostPerSecond}点）`,
+                data: {
+                    estimatedDuration: estimateResult.data.estimatedDuration,
+                    pointsNeeded: pointsNeeded,
+                    baseCostPerSecond: estimateResult.data.baseCostPerSecond,
+                    userPoints: user.userPoints
+                }
             }
         }
         console.log('params', 1);
@@ -393,8 +565,12 @@ export class DigitalHumanService {
                     historyStatus: 'processing',
                     historyStartTime: new Date(),
                     historyUseTime: 0,
-                    historyUsePoints: appCostConfig.generateVideo.cost,
-                    historyResult: [{ taskId: response.data.result.taskId }],
+                    historyUsePoints: pointsNeeded, // 使用预估点数
+                    historyResult: [{ 
+                        taskId: response.data.result.taskId,
+                        estimatedDuration: estimateResult.data.estimatedDuration,
+                        estimatedPoints: pointsNeeded
+                    }],
                     historyErrorInfos: []
                 });
 
@@ -527,31 +703,40 @@ export class DigitalHumanService {
     }, appId: number): Promise<any> {
         console.log('提交视频任务', params, user, appId);
         try {
-            // 检查余额是否充足
-            const appList = await this.appListService.getPublicAppList();
-            const appCostConfig = appList.data.find(app => app.AppId === appId)?.AppCostConfig;
-            const isPointsEnough = await this.sqlService.isPointsEnoughByUserId(user.userId, appCostConfig.generateVideo.cost);
-            if (!isPointsEnough.isSuccess) {
-                return {
-                    isSuccess: false,
-                    message: '余额不足',
-                    data: null,
-                }
+            // 预估所需点数
+            const estimateResult = await this.estimatePointsNeeded(params, appId);
+            if (!estimateResult.isSuccess) {
+                return estimateResult;
             }
-
+            
+            let pointsNeeded = estimateResult.data.pointsNeeded;
+            
             // 如果有裂变参数，需要计算总共需要的点数
             if (params.fissionParams) {
                 const totalTasks = params.fissionParams.figureIds.length * (params.fissionParams.ttsPersons?.length || 1);
-                const totalPoints = appCostConfig.generateVideo.cost * totalTasks;
-                const isEnoughForAll = await this.sqlService.isPointsEnoughByUserId(user.userId, totalPoints);
-                if (!isEnoughForAll.isSuccess) {
-                    return {
-                        isSuccess: false,
-                        message: `余额不足，裂变任务需要 ${totalPoints} 点数`,
-                        data: null,
+                pointsNeeded = pointsNeeded * totalTasks;
+                console.log(`[点数预估] 裂变任务，总任务数: ${totalTasks}，总需点数: ${pointsNeeded}`);
+            }
+            
+            // 检查余额是否充足
+            const isPointsEnough = await this.sqlService.isPointsEnoughByUserId(user.userId, pointsNeeded);
+            if (!isPointsEnough.isSuccess) {
+                return {
+                    isSuccess: false,
+                    message: `余额不足，预估需要${pointsNeeded}点数（预估视频时长${estimateResult.data.estimatedDuration}秒，每秒${estimateResult.data.baseCostPerSecond}点${params.fissionParams ? '，裂变任务' : ''}）`,
+                    data: {
+                        estimatedDuration: estimateResult.data.estimatedDuration,
+                        pointsNeeded: pointsNeeded,
+                        baseCostPerSecond: estimateResult.data.baseCostPerSecond,
+                        userPoints: user.userPoints,
+                        isFissionTask: !!params.fissionParams,
+                        fissionTaskCount: params.fissionParams ? 
+                            params.fissionParams.figureIds.length * (params.fissionParams.ttsPersons?.length || 1) : 0
                     }
                 }
             }
+
+            console.log('提交高级数字人合成任务：', params);
 
             const response = await axios.post(
                 `${this.baseUrl}/api/digitalhuman/open/v1/video/advanced/submit`,
@@ -590,11 +775,13 @@ export class DigitalHumanService {
                             historyStatus: 'processing',
                             historyStartTime: new Date(),
                             historyUseTime: 0,
-                            historyUsePoints: appCostConfig.generateVideo.cost,
+                            historyUsePoints: estimateResult.data.pointsNeeded, // 每个任务使用单任务预估点数
                             historyResult: [{
                                 taskId: task.taskId,
                                 figureId: task.figureId,
-                                ttsPerson: task.ttsPerson
+                                ttsPerson: task.ttsPerson,
+                                estimatedDuration: estimateResult.data.estimatedDuration,
+                                estimatedPoints: estimateResult.data.pointsNeeded
                             }],
                             historyErrorInfos: []
                         });
@@ -656,8 +843,12 @@ export class DigitalHumanService {
                         historyStatus: 'processing',
                         historyStartTime: new Date(),
                         historyUseTime: 0,
-                        historyUsePoints: appCostConfig.generateVideo.cost,
-                        historyResult: [{ taskId: response.data.result.taskId }],
+                        historyUsePoints: pointsNeeded, // 使用预估点数
+                        historyResult: [{ 
+                            taskId: response.data.result.taskId,
+                            estimatedDuration: estimateResult.data.estimatedDuration,
+                            estimatedPoints: pointsNeeded
+                        }],
                         historyErrorInfos: []
                     });
 
@@ -727,6 +918,159 @@ export class DigitalHumanService {
      * 高级数字人-从数据库查询任务状态
      */
     async adv_queryTaskStatusFromSQL(taskId: string, userId: number): Promise<any> {
+        try {
+            return {
+                isSuccess: true,
+                message: '查询任务状态成功',
+                data: await this.taskRecordsService.getTaskRecordById(Number(taskId))
+            };
+        } catch (error) {
+            return {
+                isSuccess: false,
+                message: `查询任务状态失败: ${error.message}`,
+                data: null,
+            }
+        }
+    }
+
+    /**
+     * 123数字人-提交视频任务
+     */
+    async _123_submitVideoTask(params: {
+        templateVideoId?: string;
+        templateId?: string;
+        driveType?: 'TEXT' | 'VOICE';
+        text?: string;
+        ttsParams?: TTSParams;
+        inputAudioUrl?: string;
+        videoParams: {
+            width: number;
+            height: number;
+        };
+        callbackUrl?: string;
+    }, user: {
+        userId: number;
+        userPhone: string;
+        userEmail: string;
+        userPoints: number;
+    }, appId: number): Promise<any> {
+        try {
+            // 预估所需点数
+            const estimateResult = await this.estimatePointsNeeded(params, appId);
+            if (!estimateResult.isSuccess) {
+                return estimateResult;
+            }
+            
+            // 检查余额是否充足
+            const pointsNeeded = estimateResult.data.pointsNeeded;
+            const isPointsEnough = await this.sqlService.isPointsEnoughByUserId(user.userId, pointsNeeded);
+            if (!isPointsEnough.isSuccess) {
+                return {
+                    isSuccess: false,
+                    message: `余额不足，预估需要${pointsNeeded}点数（预估视频时长${estimateResult.data.estimatedDuration}秒，每秒${estimateResult.data.baseCostPerSecond}点）`,
+                    data: {
+                        estimatedDuration: estimateResult.data.estimatedDuration,
+                        pointsNeeded: pointsNeeded,
+                        baseCostPerSecond: estimateResult.data.baseCostPerSecond,
+                        userPoints: user.userPoints
+                    }
+                }
+            }
+
+            const response = await axios.post(
+                `${this.baseUrl}/api/digitalhuman/open/v1/video/submit/fast`,
+                {
+                    ...params,
+                    driveType: params.driveType || 'TEXT',
+                },
+                {
+                    headers: this.getHeaders(),
+                },
+            );
+
+            console.log('123数字人API返回数据:', JSON.stringify(response.data, null, 2));
+
+            if (response.data.code === 0) {
+                // 写入任务记录
+                const taskRecord = await this.taskRecordsService.writeTaskRecord({
+                    historyUserId: user.userId,
+                    historyAppId: 20, // 123数字人的historyAppId是20
+                    historyStatus: 'processing',
+                    historyStartTime: new Date(),
+                    historyUseTime: 0,
+                    historyUsePoints: pointsNeeded, // 使用预估点数
+                    historyResult: [{ 
+                        taskId: response.data.result.taskId,
+                        templateId: response.data.result.templateId,
+                        estimatedDuration: estimateResult.data.estimatedDuration,
+                        estimatedPoints: pointsNeeded
+                    }],
+                    historyErrorInfos: []
+                });
+
+                // 开始轮询任务状态
+                this.pollTaskStatus(response.data.result.taskId, taskRecord.historyId, user, appId);
+
+                return {
+                    isSuccess: true,
+                    message: '提交123数字人合成任务成功',
+                    data: taskRecord.historyId,
+                }
+            } else {
+                return {
+                    isSuccess: false,
+                    message: response.data.message.global,
+                    data: null,
+                }
+            }
+        } catch (error) {
+            return {
+                isSuccess: false,
+                message: `提交视频合成任务失败: ${error.message}`,
+                data: null,
+            }
+        }
+    }
+
+    /**
+     * 123数字人-从百度API查询任务状态
+     */
+    private async _123_queryTaskStatus(taskId: string): Promise<any> {
+        try {
+            const response = await axios.get(
+                `${this.baseUrl}/api/digitalhuman/open/v1/video/task`,
+                {
+                    params: { taskId },
+                    headers: this.getHeaders(),
+                },
+            );
+
+            if (response.data.code === 0) {
+                return {
+                    isSuccess: true,
+                    message: '获取123数字人合成任务状态成功',
+                    data: response.data.result
+                }
+            } else {
+                return {
+                    isSuccess: false,
+                    message: response.data.message.global,
+                    data: null,
+                }
+            }
+        } catch (error) {
+            return {
+                isSuccess: false,
+                message: `查询任务状态失败: ${error.message}`,
+                data: null,
+            }
+        }
+    }
+
+    /**
+     * 123数字人-从数据库查询任务状态
+     */
+    async _123_queryTaskStatusFromSQL(taskId: string, userId: number): Promise<any> {
         try {
             return {
                 isSuccess: true,

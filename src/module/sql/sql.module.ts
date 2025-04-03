@@ -25,13 +25,20 @@ import { UserMembership } from 'src/entities/userAssets/userMembership.entity';
 import { UserPoints } from 'src/entities/userAssets/userPoints.entity';
 import { UserPremiumFeature } from 'src/entities/userAssets/userPremiumFeature.entity';
 import { UserAssetsController } from './controller/user-assets/user-assets.controller';
+import { UpdateAppController } from './controller/update-app/update-app.controller';
+import { UpdateAppService } from './service/update-app/update-app.service';
+import { AppInfo } from 'src/entities/update-app/appInfo.entity';
+import { VoiceCloneController } from './controller/voice-clone/voice-clone.controller';
+import { VoiceCloneService } from './service/voice-clone/voice-clone.service';
+import { ClonedVoice } from 'src/entities/userAssetsForDigitalAuman/clonedVoice.entity';
+import { Apps } from 'src/entities/apps.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([HistoryInfo, UserUpload, UserInfo, Pay, Feedback, ShopItems, UserAssets, UserMembership, UserPoints, UserPremiumFeature])
+    TypeOrmModule.forFeature([HistoryInfo, UserUpload, UserInfo, Pay, Feedback, ShopItems, UserAssets, UserMembership, UserPoints, UserPremiumFeature, AppInfo, ClonedVoice, Apps])
   ],
-  controllers: [HistoryController, OssController, AdminController, BosController, ShopController, UserAssetsController],
-  providers: [HistoryService, SqlService, OssService, DatatransService, JwtService, AdminService, BosService, UserAssetsService],
-  exports: [SqlService, HistoryService, OssService]
+  controllers: [HistoryController, OssController, AdminController, BosController, ShopController, UserAssetsController, UpdateAppController, VoiceCloneController],
+  providers: [HistoryService, SqlService, OssService, DatatransService, JwtService, AdminService, BosService, UserAssetsService, UpdateAppService, VoiceCloneService],
+  exports: [SqlService, HistoryService, OssService, VoiceCloneService]
 })
 export class SqlModule {}

@@ -1,5 +1,5 @@
 // pay.controller.ts
-import { Controller, Post, Get, Req, Res, UseGuards } from '@nestjs/common';
+import { Controller, Post, Get, Req, Res, UseGuards, Param } from '@nestjs/common';
 import { PayService } from '../../service/pay/pay.service';
 import { JwtAuthGuard } from 'src/module/user/others/jwt-auth.guard';
 
@@ -49,6 +49,18 @@ export class PayController {
         // userId是必然不会变动的信息，所以用UseGuards来从JWT中取出，以从数据库中获取动态信息
         const payerId = req.user.userId;
         return await this.payService.getPayInfos(payerId);
+    }
+
+    // 根据用户ID获取累计充值金额
+    @Get('total/:userId')
+    @UseGuards(JwtAuthGuard)
+    async getUserTotalPayment(@Param('userId') userId: number): Promise<any> {
+        const totalAmount = await this.payService.getUserTotalPayment(userId);
+        return { 
+            isSuccess: true, 
+            message: '获取用户累计充值金额成功', 
+            data: { totalAmount } 
+        };
     }
 
 }

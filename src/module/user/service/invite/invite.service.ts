@@ -4,13 +4,21 @@ import sharp from 'sharp';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { UserInfo } from '../../../../entities/userinfo.entity';
+import { PayService } from '../../../api/service/pay/pay.service';
 
 @Injectable()
 export class InviteService {
     private readonly posterTemplate: string;
     private readonly frontendUrl: string;
 
-    constructor() {
+    constructor(
+        @InjectRepository(UserInfo)
+        private readonly userInfoRepository: Repository<UserInfo>,
+        private readonly payService: PayService,
+    ) {
         this.frontendUrl = process.env.FRONTEND_URL;
         // 海报模板路径
         this.posterTemplate = 'https://clouddreamai.oss-cn-shanghai.aliyuncs.com/AIPlatform/apps/invite/SoooInvite.png';
@@ -93,6 +101,48 @@ export class InviteService {
                 .toBuffer();
         } catch (error) {
             throw new Error(`生成邀请海报失败: ${error.message}`);
+        }
+    }
+
+    /**
+     * 获取用户邀请的用户列表
+     * @param userId 当前用户ID
+     * @returns 被邀请用户列表
+     */
+    async getInvitedUsers(userId: number): Promise<any[]> {
+        try {
+            // 查询被当前用户邀请的所有用户
+            const invitedUsers = await this.userInfoRepository.find({
+                where: { userBeInvitedUserId: userId },
+                select: [
+                    'userId',
+                    'userName',
+                    'userStatus',
+                    'userRegisterDate',
+                    'userAvatarUrl'
+                ]
+            });
+
+            // 获取每个被邀请用户的累计充值金额
+            const invitedUsersWithPayment = await Promise.all(
+                invitedUsers.map(async (user) => {
+                    // 获取用户累计充值金额
+                    const totalPayment = await this.payService.getUserTotalPayment(user.userId);
+
+                    return {
+                        id: user.userId,
+                        name: user.userName,
+                        status: user.userStatus,
+                        registerDate: user.userRegisterDate,
+                        avatarUrl: user.userAvatarUrl,
+                        totalPayment // 添加累计充值金额
+                    };
+                })
+            );
+
+            return invitedUsersWithPayment;
+        } catch (error) {
+            throw new Error(`获取邀请用户列表失败: ${error.message}`);
         }
     }
 }

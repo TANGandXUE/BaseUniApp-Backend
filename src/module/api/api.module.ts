@@ -38,6 +38,6 @@ import { AsrService } from './service/asr/asr.service';
   ],
   controllers: [ApiController, PayController, AsrController],
   providers: [UploadService, IsimgService, DatatransService, MeituautoService, ChatqwenService, AlimsgService, PayService, UserAssetsService, AsrService],
-  exports: [UploadService, ChatqwenService, MeituautoService, AlimsgService],
+  exports: [UploadService, ChatqwenService, MeituautoService, AlimsgService, PayService],
 })
 export class ApiModule {}

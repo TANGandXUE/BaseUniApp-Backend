@@ -27,7 +27,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
             userAvatarUrl: payload.userAvatarUrl,
             userIsAdmin: payload.userIsAdmin,
             userInviteCode: payload.userInviteCode || '',
-            userBeInvitedUserId: payload.userBeInvitedUserId || null
+            userBeInvitedUserId: payload.userBeInvitedUserId || null,
+            userIsAgent: payload.userIsAgent || false,
+            userAgentRate: payload.userAgentRate || 0
         };
     }
 }

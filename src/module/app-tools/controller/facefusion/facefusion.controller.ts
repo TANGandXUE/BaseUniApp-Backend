@@ -12,7 +12,7 @@ export class FacefusionController {
     @Post('start')
     @UseGuards(JwtAuthGuard)
     async submitFaceSwapTask(@Req() req: any): Promise<any> {
-        return await this.facefusionService.submitFaceSwapTask(req.body, req.user, 4); // 假设换脸工具的 appId 是 4
+        return await this.facefusionService.submitFaceSwapTask(req.body, req.user, 22); // 假设换脸工具的 appId 是 22
     }
 
     // 获取任务状态
