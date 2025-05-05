@@ -90,3 +90,20 @@ Nest is [MIT licensed](LICENSE).
 4. 返回的URL文件：result_fileInfos_url(response_fileInfos_url): Array<{fileName: string, fileURL: string}>
 
 5. 逻辑框架：1. 初始化相关总参数 2. 使用不同API,将返回结果push到总参数 3.返回status和总参数
+
+## API任务队列机制
+
+为了避免API限速问题，系统使用了基于队列的并发控制机制：
+
+1. 批量语音合成任务使用p-queue库实现控制并发
+2. 支持任务重试、优先级和超时机制
+3. 使用指数退避策略处理API限速问题
+
+### 相关环境变量配置
+
+```bash
+# 语音合成任务队列配置
+COSYVOICE_MAX_CONCURRENCY=3  # 最大并发数
+COSYVOICE_MAX_RETRIES=3      # 最大重试次数
+COSYVOICE_RETRY_DELAY=5000   # 重试基础延迟时间(毫秒)
+```

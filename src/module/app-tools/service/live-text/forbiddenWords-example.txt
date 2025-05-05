@@ -1,0 +1,95 @@
+// 违禁词列表
+const forbiddenWords = `
+极限词与夸大宣传词
+最佳、最具、最赚、最优、最优秀、最好、最大、最高、最强
+中国第一、全国第一、全网第一、排名第一、第一品牌、行业第一
+国家级、世界级、顶级、极致、独一无二、绝无仅有、史无前例、前无古人
+
+虚假承诺与绝对化用词
+立马见效、100%有效、零风险、永久、无敌、终生、绝对不起球、终生穿不坏
+
+品牌相关禁忌词
+领袖品牌、世界领先、缔造者、至尊、巅峰
+
+价格与促销相关禁忌词
+仅此一次、最后一天、点击领奖、点击获取、秒杀、抢爆
+
+医疗保健相关禁忌词
+治愈、根治、痊愈、药到病除、无效退款、降血压、修复受损肌肤
+
+迷信相关禁忌词
+旺夫旺子、带来好运气、增强第六感、画小人、逢凶化吉、转运
+
+不文明用语及歧视性语言
+高丽棒子、黑鬼、杂种、东亚病夫、蛮夷、大男人、小女人、男尊女卑、重男轻女、洋鬼子、小日本、大汉族主义
+
+涉及政治敏感、违法违规词汇
+反动、分裂、邪教、暴力革命
+
+诱导性词语
+保值、升值、有投资价值、投资回报
+
+其他平台相关词汇
+微信、QQ、B站、知乎、小红书、淘宝、京东
+
+材质虚假描述词
+纯棉、百分百棉、真皮真丝
+
+疑似欺骗用户的词语
+假一赔万、100%正品、点击有惊喜、免单、免费领取
+
+暴利色情类词语
+性生活、算命
+
+涉及未经授权的版权材料表述
+未经授权的音乐、视频、图片
+
+侵犯他人隐私的词汇
+身份信息、家庭住址
+
+负面的攻击性言论词汇
+恶意攻击、诽谤
+
+误导性的广告宣传词汇
+误导性操作、诱导交易
+
+不实的健康声明词汇
+未经证实的健康效果、无科学依据的治疗能力
+
+违反公序良俗的词汇
+色情、低俗、血腥、暴力、诋毁国家
+`.split('\n')
+    .map(line => line.trim())
+    .filter(line => line && !line.startsWith('#') && !line.includes('词'))
+    .join('、')
+    .split('、')
+    .map(word => word.trim())
+    .filter(word => word);
+
+// 系统提示词
+export const forbiddenWordsPrompt = `
+请注意避免使用以下违禁词和敏感词：
+${forbiddenWords.join('、')}
+`;
+
+// 检查文本中的违禁词
+export function checkForbiddenWords(text: string): string[] {
+    const foundWords: string[] = [];
+    for (const word of forbiddenWords) {
+        if (text.includes(word)) {
+            foundWords.push(word);
+        }
+    }
+    return foundWords;
+}
+
+// 简单替换违禁词
+export function replaceForbiddenWords(text: string): string {
+    let result = text;
+    for (const word of forbiddenWords) {
+        // 根据词语长度用相应数量的*替换
+        const replacement = '*'.repeat(word.length);
+        result = result.replace(new RegExp(word, 'g'), replacement);
+    }
+    return result;
+} 

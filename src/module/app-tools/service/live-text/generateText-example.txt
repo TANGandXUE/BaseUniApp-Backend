@@ -1,0 +1,285 @@
+import OpenAI from "openai";
+import { z } from "zod";
+import { zodResponseFormat } from "openai/helpers/zod";
+import { forbiddenWordsPrompt, checkForbiddenWords, replaceForbiddenWords } from './forbiddenWords';
+
+// 定义生成参数的类型
+export interface GenerateTextBaseParams {
+    type: 'explain' | 'control' | 'qa';
+    style: string;
+    wordCount: number;
+    background: string;
+    suggestion: string;  // 添加生成建议字段
+}
+
+export interface CategoryInfo {
+    name: string;
+    count: number;
+}
+
+export interface ExplainControlParams extends GenerateTextBaseParams {
+    type: 'explain' | 'control';
+    categories: CategoryInfo[];
+}
+
+export interface QAParams extends GenerateTextBaseParams {
+    type: 'qa';
+    count: number;
+    requirements: string[];
+}
+
+export type GenerateTextParams = ExplainControlParams | QAParams;
+
+export interface ScriptItem {
+    text?: string;
+    keywords?: string;
+    generateAudio: boolean;
+}
+
+export type ScriptGroup = ScriptItem[] | ScriptItem;
+export type GeneratedScript = ScriptGroup[];
+
+const ScriptItemSchema = z.object({
+    text: z.string().optional(),
+    keywords: z.string().optional(),
+    generateAudio: z.boolean()
+});
+
+const ScriptSchema = z.object({
+    scripts: z.array(z.array(ScriptItemSchema).or(z.array(z.object({
+        text: z.string().optional(),
+        keywords: z.string().optional(),
+        generateAudio: z.boolean()
+    }))))
+});
+
+// 文本润色方法
+export async function polishText(text: string, prompt: string): Promise<string> {
+    console.log('开始润色文本，原文：', text);
+    console.log('润色提示词：', prompt);
+
+    const openai = new OpenAI({
+        apiKey: import.meta.env.VITE_GENERATE_TEXT_API_KEY,
+        baseURL: import.meta.env.VITE_GENERATE_TEXT_BASE_URL,
+        dangerouslyAllowBrowser: true,
+    });
+
+    try {
+        const completion = await openai.chat.completions.create({
+            model: import.meta.env.VITE_GENERATE_TEXT_MODEL || "gpt-4o-mini",
+            messages: [
+                { 
+                    role: "system", 
+                    content: "你是一个专业的文本润色助手。请直接返回润色后的文本，不要添加任何额外说明、标记或解释。" + forbiddenWordsPrompt
+                },
+                {
+                    role: "user",
+                    content: `请按照以下要求润色文本，直接返回润色结果：\n${prompt}\n\n${text}`
+                }
+            ],
+            temperature: 0.7
+        });
+
+        const polishedText = completion.choices[0].message.content;
+        if (!polishedText) {
+            throw new Error("润色结果为空");
+        }
+
+        console.log('润色后的文本：', polishedText);
+        return polishedText;
+    } catch (error) {
+        console.error('润色文本时发生错误：', error);
+        throw error;
+    }
+}
+
+// 去除违禁词方法
+export async function removeForbiddenWords(text: string, prompt: string): Promise<string> {
+    console.log('开始去除违禁词，原文：', text);
+    console.log('处理要求：', prompt);
+
+    const openai = new OpenAI({
+        apiKey: import.meta.env.VITE_GENERATE_TEXT_API_KEY,
+        baseURL: import.meta.env.VITE_GENERATE_TEXT_BASE_URL,
+        dangerouslyAllowBrowser: true,
+    });
+
+    try {
+        // 先检查违禁词
+        const foundWords = checkForbiddenWords(text);
+        console.log('发现的违禁词：', foundWords);
+
+        if (foundWords.length === 0) {
+            return text; // 如果没有违禁词，直接返回原文
+        }
+
+        const completion = await openai.chat.completions.create({
+            model: import.meta.env.VITE_GENERATE_TEXT_MODEL || "gpt-4o-mini",
+            messages: [
+                { 
+                    role: "system", 
+                    content: "你是一个专业的文本优化助手。请帮助用户重写文本，去除所有违禁词，保持原意的同时使表达更加规范。" + forbiddenWordsPrompt
+                },
+                {
+                    role: "user",
+                    content: `请按照以下要求重写文本，去除违禁词：\n${prompt}\n\n原文中包含以下违禁词：${foundWords.join('、')}\n\n原文：${text}`
+                }
+            ],
+            temperature: 0.7
+        });
+
+        const cleanedText = completion.choices[0].message.content;
+        if (!cleanedText) {
+            throw new Error("处理结果为空");
+        }
+
+        // 再次检查处理后的文本是否还包含违禁词
+        const remainingWords = checkForbiddenWords(cleanedText);
+        if (remainingWords.length > 0) {
+            // 如果AI没能完全去除违禁词，使用简单替换
+            return replaceForbiddenWords(cleanedText);
+        }
+
+        console.log('处理后的文本：', cleanedText);
+        return cleanedText;
+    } catch (error) {
+        console.error('去除违禁词时发生错误：', error);
+        throw error;
+    }
+}
+
+// 添加类型定义
+interface QAResult {
+    keywords: string;
+    text: string;
+}
+
+// 生成文本的函数
+export async function generateText(params: GenerateTextParams): Promise<GeneratedScript> {
+    console.log('开始生成文本，参数：', params);
+
+    const openai = new OpenAI({
+        apiKey: import.meta.env.VITE_GENERATE_TEXT_API_KEY,
+        baseURL: import.meta.env.VITE_GENERATE_TEXT_BASE_URL,
+        dangerouslyAllowBrowser: true,
+    });
+
+    const systemPrompt = "你是一个专业的直播话术生成助手。请直接返回JSON格式数据，不要使用markdown格式，不要添加任何额外的文字说明。" +
+        "对于场控音生成任务，每条场控音都需要生成音频(generateAudio=true)。" +
+        "对于问答生成任务，问题不需要生成音频(generateAudio=false)，答案需要生成音频(generateAudio=true)。" +
+        "返回格式示例：{\"scripts\":[[{\"text\":\"欢迎来到直播间\",\"generateAudio\":true}]]}" +
+        forbiddenWordsPrompt;
+
+    // 构建提示词
+    let prompt = ''
+    if (params.type === 'qa') {
+        prompt = `
+任务类型：问答生成
+生成要求：请生成${params.count}组问答对，每组包含问题关键词和详细回答
+生成风格：${params.style}
+单条字数：${params.wordCount}
+背景知识：${params.background}
+
+具体要求：
+${params.requirements.slice(0, -1).map((req, index) => `${index + 1}. ${req}`).join('\n')}
+
+返回格式要求：
+{
+    "scripts": [
+        {
+            "keywords": "关键词1 关键词2 关键词3 关键词4 关键词5",
+            "text": "详细回答内容1"
+        },
+        {
+            "keywords": "关键词1 关键词2 关键词3 关键词4 关键词5",
+            "text": "详细回答内容2"
+        }
+        // ... 共${params.count}组
+    ]
+}
+
+注意：
+1. 必须严格按照以上JSON格式返回
+2. 必须生成${params.count}组完整的问答对
+3. 每组问答都必须包含keywords和text两个字段
+4. 每组关键词必须是5个，用空格分隔
+5. 每组回答必须完整详细地覆盖对应的5个关键词
+`
+    } else {
+        prompt = `
+任务类型：${params.type === 'explain' ? '讲解音生成' : '场控文字生成'}
+生成风格：${params.style}
+单条字数：${params.wordCount}
+背景知识：${params.background}
+分类要求：
+${params.categories.map(c => `${c.name}：${c.count}条`).join('\n')}
+要求：生成的每条话术${params.type === 'explain' ? '都需要' : '都不需要'}生成音频。
+`
+    }
+
+    try {
+        console.log('使用的 Schema：', JSON.stringify(ScriptSchema.shape, null, 2));
+        const completion = await openai.beta.chat.completions.parse({
+            model: import.meta.env.VITE_GENERATE_TEXT_MODEL || "gpt-4o-mini",
+            messages: [
+                { 
+                    role: "system", 
+                    content: systemPrompt
+                },
+                {
+                    role: "user",
+                    content: prompt + "\n请直接返回JSON数据，不要使用markdown格式。",
+                },
+            ],
+            response_format: {
+                type: "json_object",
+                schema: ScriptSchema,
+                name: "script_generation"
+            },
+            temperature: 0.7
+        });
+
+        const content = completion.choices[0].message.content;
+        if (!content) {
+            throw new Error("返回的内容为空");
+        }
+
+        const jsonStr = content.replace(/```json\n|\n```/g, '');
+        console.log('提取的 JSON 字符串：', jsonStr);
+        
+        try {
+            // 修改解析逻辑
+            if (params.type === 'qa' && jsonStr.includes('"scripts"')) {
+                const result = JSON.parse(jsonStr);
+                if (Array.isArray(result.scripts)) {
+                    return result.scripts.map((item: QAResult) => [
+                        { text: item.keywords, generateAudio: false },
+                        { text: item.text, generateAudio: true }
+                    ]);
+                }
+            }
+
+            // 尝试解析为单个问答对象
+            if (params.type === 'qa' && jsonStr.includes('"keywords"') && jsonStr.includes('"text"')) {
+                const qaResult = JSON.parse(jsonStr);
+                return [[
+                    { text: qaResult.keywords, generateAudio: false },
+                    { text: qaResult.text, generateAudio: true }
+                ]];
+            }
+
+            // 尝试解析为原有格式
+            const result = JSON.parse(jsonStr) as z.infer<typeof ScriptSchema>;
+            if (!result || !result.scripts) {
+                throw new Error('返回的数据格式不正确');
+            }
+            return result.scripts;
+        } catch (parseError) {
+            console.error('JSON解析错误：', parseError);
+            throw new Error('返回的数据格式不正确');
+        }
+    } catch (error) {
+        console.error('生成文本时发生错误：', error);
+        throw error;
+    }
+}

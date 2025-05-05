@@ -22,6 +22,7 @@ export class HistoryService {
         order: "ascending" | "descending" | null,                                 // 升降序
         historyAppIds?: number[],                                                 // 应用ID数组（可选）
         appCategories?: string[],                                                 // 应用分类数组（可选）
+        historyStatus?: string,                                                   // 任务状态（可选）：processing, completed, failed
     ): Promise<{
         isSuccess: boolean,
         message: string,
@@ -52,6 +53,11 @@ export class HistoryService {
             // 如果提供了应用ID数组，添加应用ID筛选
             if (historyAppIds?.length > 0) {
                 query.andWhere('historyInfo.historyAppId IN (:...historyAppIds)', { historyAppIds });
+            }
+
+            // 如果提供了任务状态，添加状态筛选
+            if (historyStatus) {
+                query.andWhere('historyInfo.historyStatus = :historyStatus', { historyStatus });
             }
 
             // 如果提供了应用分类数组，通过appsRepository查询相关应用ID

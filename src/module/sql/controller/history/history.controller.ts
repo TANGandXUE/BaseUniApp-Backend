@@ -21,6 +21,7 @@ export class HistoryController {
             req.body.order,             // 升降序
             req.body.historyAppIds,     // 应用ID数组（可选）
             req.body.appCategories,     // 应用分类数组（可选）
+            req.body.historyStatus,     // 任务状态（可选）：processing, completed, failed
         );
         // console.log('result: ', JSON.stringify(result));
         return result;

@@ -40,6 +40,10 @@ import { LtxvideoController } from './controller/ltxvideo/ltxvideo.controller';
 import { LtxvideoService } from './service/ltxvideo/ltxvideo.service';
 import { CosyvoiceAliyunController } from './controller/cosyvoice-aliyun/cosyvoice-aliyun.controller';
 import { CosyvoiceAliyunService } from './service/cosyvoice-aliyun/cosyvoice-aliyun.service';
+import { LiveTextController } from './controller/live-text/live-text.controller';
+import { LiveTextService } from './service/live-text/live-text.service';
+import { SambertAliyunController } from './controller/sambert-aliyun/sambert-aliyun.controller';
+import { SambertAliyunService } from './service/sambert-aliyun/sambert-aliyun.service';
 
 @Module({
   imports: [
@@ -48,7 +52,7 @@ import { CosyvoiceAliyunService } from './service/cosyvoice-aliyun/cosyvoice-ali
     TypeOrmModule.forFeature([Apps, HistoryInfo, WechatOfficial, Knowledge, ApiKey]),
     HttpModule
   ],
-  controllers: [DigitalHumanController, FacefusionController, ChatController, MimicmotionController, CosyvoiceController, WechatArticleExporterController, CozeController, KnowledgeController, SearchController, PixverseController, ApiController, ApiChatController, LtxvideoController, CosyvoiceAliyunController],
+  controllers: [DigitalHumanController, FacefusionController, ChatController, MimicmotionController, CosyvoiceController, WechatArticleExporterController, CozeController, KnowledgeController, SearchController, PixverseController, ApiController, ApiChatController, LtxvideoController, CosyvoiceAliyunController, LiveTextController, SambertAliyunController],
   providers: [
     DigitalHumanService, 
     AppListService, 
@@ -67,7 +71,9 @@ import { CosyvoiceAliyunService } from './service/cosyvoice-aliyun/cosyvoice-ali
     ApiService,
     ApiChatService,
     LtxvideoService,
-    CosyvoiceAliyunService
+    CosyvoiceAliyunService,
+    LiveTextService,
+    SambertAliyunService
   ],
   exports: [CozeService]
 })

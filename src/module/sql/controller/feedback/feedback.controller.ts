@@ -12,6 +12,7 @@ export class FeedbackController {
     // 发送反馈
     @Post('sendfeedback')
     @UseGuards(JwtAuthGuard)
+    // 定义一个异步函数 sendFeedback，用于发送用户反馈
     async sendFeedback(@Req() req) {
 
         return await this.sqlService.sendFeedback(

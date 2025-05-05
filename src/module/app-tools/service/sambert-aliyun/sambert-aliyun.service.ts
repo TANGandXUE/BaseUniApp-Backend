@@ -9,7 +9,7 @@ import { SqlService } from '../../../sql/service/sql/sql.service';
 import { AppListService } from '../../../apps/service/app-list/app-list.service';
 import { OssService } from '../../../sql/service/oss/oss.service';
 import { VoiceCloneService } from '../../../sql/service/voice-clone/voice-clone.service';
-import { defaultVoices } from './voice-list.data';
+import { defaultVoices } from './sambert-voice-list.data';
 
 // WebSocket消息类型定义
 interface WebSocketMessage {
@@ -51,6 +51,8 @@ interface TTSParams {
     volume?: number;
     rate?: number;
     pitch?: number;
+    word_timestamp_enabled?: boolean;
+    phoneme_timestamp_enabled?: boolean;
 }
 
 // 批量TTS请求项
@@ -62,6 +64,8 @@ interface BatchTTSItem {
     volume?: number;
     rate?: number;
     pitch?: number;
+    word_timestamp_enabled?: boolean;
+    phoneme_timestamp_enabled?: boolean;
 }
 
 // 自定义错误接口，包含任务信息
@@ -171,16 +175,16 @@ class SimpleTaskQueue implements TaskQueue {
 }
 
 @Injectable()
-export class CosyvoiceAliyunService {
-    private readonly logger = new Logger(CosyvoiceAliyunService.name);
+export class SambertAliyunService {
+    private readonly logger = new Logger(SambertAliyunService.name);
     private readonly API_KEY = process.env.DASHSCOPE_API_KEY || '';
-    private readonly WS_URL = process.env.COSYVOICE_WS_URL || 'wss://dashscope.aliyuncs.com/api-ws/v1/inference';
-    private readonly POINTS_PER_CHARACTER = Number(process.env.COSYVOICE_POINTS_PER_CHARACTER || 0.1);
-    private readonly TEMP_DIR = process.env.COSYVOICE_TEMP_DIR || 'temp/cosyvoice';
-    private readonly DEFAULT_VOICE = process.env.COSYVOICE_DEFAULT_VOICE || 'longwan';
-    private readonly MAX_CONCURRENCY = Number(process.env.COSYVOICE_MAX_CONCURRENCY || 3);
-    private readonly MAX_RETRIES = Number(process.env.COSYVOICE_MAX_RETRIES || 3);
-    private readonly RETRY_DELAY = Number(process.env.COSYVOICE_RETRY_DELAY || 5000);
+    private readonly WS_URL = process.env.SAMBERT_WS_URL || 'wss://dashscope.aliyuncs.com/api-ws/v1/inference';
+    private readonly POINTS_PER_CHARACTER = Number(process.env.SAMBERT_POINTS_PER_CHARACTER || 0.1);
+    private readonly TEMP_DIR = process.env.SAMBERT_TEMP_DIR || 'temp/sambert';
+    private readonly DEFAULT_VOICE = process.env.SAMBERT_DEFAULT_VOICE || 'sambert-zhichu-v1';
+    private readonly MAX_CONCURRENCY = Number(process.env.SAMBERT_MAX_CONCURRENCY || 3);
+    private readonly MAX_RETRIES = Number(process.env.SAMBERT_MAX_RETRIES || 3);
+    private readonly RETRY_DELAY = Number(process.env.SAMBERT_RETRY_DELAY || 5000);
 
     constructor(
         private readonly taskRecordsService: TaskRecordsService,
@@ -194,7 +198,7 @@ export class CosyvoiceAliyunService {
             fs.mkdirSync(this.TEMP_DIR, { recursive: true });
         }
         
-        this.logger.log(`CosyvoiceAliyunService 初始化完成，配置：
+        this.logger.log(`SambertAliyunService 初始化完成，配置：
             WS_URL: ${this.WS_URL}
             API_KEY: ${this.API_KEY ? '已配置' : '未配置'}
             POINTS_PER_CHARACTER: ${this.POINTS_PER_CHARACTER}
@@ -230,6 +234,8 @@ export class CosyvoiceAliyunService {
             volume?: number;
             rate?: number;
             pitch?: number;
+            word_timestamp_enabled?: boolean;
+            phoneme_timestamp_enabled?: boolean;
         },
         user: {
             userId: number;
@@ -302,10 +308,12 @@ export class CosyvoiceAliyunService {
                 text_type: 'PlainText',
                 voice: params.voice || this.DEFAULT_VOICE,
                 format: params.format || 'mp3',
-                sample_rate: params.sample_rate || 22050,
+                sample_rate: params.sample_rate || 16000,
                 volume: params.volume !== undefined ? params.volume : 50,
                 rate: params.rate !== undefined ? params.rate : 1,
-                pitch: params.pitch !== undefined ? params.pitch : 1
+                pitch: params.pitch !== undefined ? params.pitch : 1,
+                word_timestamp_enabled: params.word_timestamp_enabled !== undefined ? params.word_timestamp_enabled : false,
+                phoneme_timestamp_enabled: params.phoneme_timestamp_enabled !== undefined ? params.phoneme_timestamp_enabled : false
             };
             
             this.logger.log(`TTS参数准备完成: ${JSON.stringify(ttsParams, null, 2)}`);
@@ -353,7 +361,7 @@ export class CosyvoiceAliyunService {
         appId: number,
         charCount: number
     ) {
-        this.logger.log(`[CosyVoice任务${taskId}] 开始处理WebSocket任务`);
+        this.logger.log(`[Sambert任务${taskId}] 开始处理WebSocket任务`);
 
         const startTime = Date.now();
         const filesToCleanup = [outputFilePath];
@@ -365,8 +373,8 @@ export class CosyvoiceAliyunService {
 
         try {
             // 创建WebSocket连接
-            this.logger.log(`[CosyVoice任务${taskId}] 准备建立WebSocket连接，URL: ${this.WS_URL}`);
-            this.logger.log(`[CosyVoice任务${taskId}] 请求头: 
+            this.logger.log(`[Sambert任务${taskId}] 准备建立WebSocket连接，URL: ${this.WS_URL}`);
+            this.logger.log(`[Sambert任务${taskId}] 请求头: 
                 Authorization: bearer ${this.API_KEY.substring(0, 5)}...
                 X-DashScope-DataInspection: enable
             `);
@@ -380,36 +388,47 @@ export class CosyvoiceAliyunService {
 
             // 处理WebSocket连接成功
             ws.on('open', () => {
-                this.logger.log(`[CosyVoice任务${taskId}] WebSocket连接建立成功，准备发送run-task指令`);
+                this.logger.log(`[Sambert任务${taskId}] WebSocket连接建立成功，准备发送run-task指令`);
 
                 // 发送run-task指令
                 const runTaskMessage: WebSocketMessage = {
                     header: {
                         action: 'run-task',
                         task_id: taskId,
-                        streaming: 'duplex'
+                        streaming: 'out'
                     },
                     payload: {
+                        model: ttsParams.voice,
                         task_group: 'audio',
                         task: 'tts',
                         function: 'SpeechSynthesizer',
-                        model: 'cosyvoice-v1',
-                        parameters: ttsParams,                   
-                        input: {}
+                        input: {
+                            text: text
+                        },
+                        parameters: {
+                            text_type: ttsParams.text_type,
+                            format: ttsParams.format,
+                            sample_rate: ttsParams.sample_rate,
+                            volume: ttsParams.volume,
+                            rate: ttsParams.rate,
+                            pitch: ttsParams.pitch,
+                            word_timestamp_enabled: ttsParams.word_timestamp_enabled,
+                            phoneme_timestamp_enabled: ttsParams.phoneme_timestamp_enabled
+                        }
                     }
                 };
                 
                 const messageStr = JSON.stringify(runTaskMessage);
-                this.logger.log(`[CosyVoice任务${taskId}] 发送run-task指令: ${messageStr}`);
+                this.logger.log(`[Sambert任务${taskId}] 发送run-task指令: ${messageStr}`);
                 ws.send(messageStr);
                 
-                this.logger.log(`[CosyVoice任务${taskId}] run-task指令已发送`);
+                this.logger.log(`[Sambert任务${taskId}] run-task指令已发送`);
             });
 
             // 处理WebSocket消息
             ws.on('message', async (data) => {
                 try {
-                    this.logger.log(`[CosyVoice任务${taskId}] 收到消息类型: ${typeof data}`);
+                    this.logger.log(`[Sambert任务${taskId}] 收到消息类型: ${typeof data}`);
                     
                     // 尝试解析为JSON文本消息
                     let isTextMessage = false;
@@ -426,9 +445,9 @@ export class CosyvoiceAliyunService {
                         isTextMessage = true;
                         try {
                             message = JSON.parse(data);
-                            this.logger.log(`[CosyVoice任务${taskId}] 直接识别为JSON文本消息`);
+                            this.logger.log(`[Sambert任务${taskId}] 直接识别为JSON文本消息`);
                         } catch (e) {
-                            this.logger.error(`[CosyVoice任务${taskId}] 字符串解析JSON失败: ${e.message}`);
+                            this.logger.error(`[Sambert任务${taskId}] 字符串解析JSON失败: ${e.message}`);
                         }
                     } else {
                         // 处理其他可能的类型
@@ -437,15 +456,15 @@ export class CosyvoiceAliyunService {
                             if (strData && strData.trim().startsWith('{')) {
                                 message = JSON.parse(strData);
                                 isTextMessage = true;
-                                this.logger.log(`[CosyVoice任务${taskId}] 其他类型转换为JSON成功`);
+                                this.logger.log(`[Sambert任务${taskId}] 其他类型转换为JSON成功`);
                             }
                         } catch (e) {
-                            this.logger.error(`[CosyVoice任务${taskId}] 未知类型转换失败: ${e.message}`);
+                            this.logger.error(`[Sambert任务${taskId}] 未知类型转换失败: ${e.message}`);
                             // 尝试转换为Buffer
                             try {
                                 dataBuffer = Buffer.from(data as any);
                             } catch (bufferErr) {
-                                this.logger.error(`[CosyVoice任务${taskId}] 无法转换为Buffer: ${bufferErr.message}`);
+                                this.logger.error(`[Sambert任务${taskId}] 无法转换为Buffer: ${bufferErr.message}`);
                             }
                         }
                     }
@@ -458,92 +477,55 @@ export class CosyvoiceAliyunService {
                             if (dataStr.trim().startsWith('{')) {
                                 message = JSON.parse(dataStr);
                                 isTextMessage = true;
-                                this.logger.log(`[CosyVoice任务${taskId}] Buffer解析为JSON成功: ${dataStr}`);
+                                this.logger.log(`[Sambert任务${taskId}] Buffer解析为JSON成功: ${dataStr}`);
                             }
                         } catch (parseError) {
                             // 解析失败，说明不是JSON文本
                             isTextMessage = false;
-                            this.logger.log(`[CosyVoice任务${taskId}] Buffer不是JSON文本，确认为二进制数据`);
+                            this.logger.log(`[Sambert任务${taskId}] Buffer不是JSON文本，确认为二进制数据`);
                         }
                     }
                     
                     if (isTextMessage && message) {
                         // 处理JSON文本消息
-                        this.logger.log(`[CosyVoice任务${taskId}] 解析后的消息: ${JSON.stringify(message, null, 2)}`);
-                        this.logger.log(`[CosyVoice任务${taskId}] 收到事件: ${message.header.event}`);
+                        this.logger.log(`[Sambert任务${taskId}] 解析后的消息: ${JSON.stringify(message, null, 2)}`);
+                        this.logger.log(`[Sambert任务${taskId}] 收到事件: ${message.header.event}`);
 
                         switch (message.header.event) {
                             case 'task-started':
                                 taskStarted = true;
-                                this.logger.log(`[CosyVoice任务${taskId}] 任务已开始，准备发送文本`);
+                                this.logger.log(`[Sambert任务${taskId}] 任务已开始`);
+                                break;
 
-                                // 发送continue-task指令
-                                const continueTaskMessage: WebSocketMessage = {
-                                    header: {
-                                        action: 'continue-task',
-                                        task_id: taskId,
-                                        streaming: 'duplex'
-                                    },
-                                    payload: {
-                                        input: {
-                                            text: text
-                                        }
-                                    }
-                                };
-                                
-                                const continueTaskMessageStr = JSON.stringify(continueTaskMessage);
-                                this.logger.log(`[CosyVoice任务${taskId}] 发送continue-task指令: ${continueTaskMessageStr}`);
-                                ws.send(continueTaskMessageStr);
-                                
-                                this.logger.log(`[CosyVoice任务${taskId}] continue-task指令已发送，准备过1秒发送finish-task指令`);
-
-                                // 发送finish-task指令
-                                setTimeout(() => {
-                                    if (ws.readyState === WebSocket.OPEN) {
-                                        this.logger.log(`[CosyVoice任务${taskId}] 准备发送finish-task指令`);
-                                        const finishTaskMessage: WebSocketMessage = {
-                                            header: {
-                                                action: 'finish-task',
-                                                task_id: taskId,
-                                                streaming: 'duplex'
-                                            },
-                                            payload: {
-                                                input: {}
-                                            }
-                                        };
-                                        
-                                        const finishTaskMessageStr = JSON.stringify(finishTaskMessage);
-                                        this.logger.log(`[CosyVoice任务${taskId}] 发送finish-task指令: ${finishTaskMessageStr}`);
-                                        ws.send(finishTaskMessageStr);
-                                        
-                                        this.logger.log(`[CosyVoice任务${taskId}] finish-task指令已发送`);
-                                    } else {
-                                        this.logger.warn(`[CosyVoice任务${taskId}] WebSocket连接已关闭，无法发送finish-task指令`);
-                                    }
-                                }, 1000); // 等待1秒后发送结束指令
+                            case 'result-generated':
+                                this.logger.log(`[Sambert任务${taskId}] 收到中间结果`);
+                                // 如果有时间戳信息，可以在这里处理
+                                if (message.payload?.output?.sentence) {
+                                    this.logger.log(`[Sambert任务${taskId}] 时间戳信息: ${JSON.stringify(message.payload.output.sentence, null, 2)}`);
+                                }
                                 break;
 
                             case 'task-finished':
                                 const useTime = Date.now() - startTime;
-                                this.logger.log(`[CosyVoice任务${taskId}] 任务完成，耗时: ${useTime}ms`);
-                                this.logger.log(`[CosyVoice任务${taskId}] 任务完成详细信息: ${JSON.stringify(message.payload, null, 2)}`);
-                                this.logger.log(`[CosyVoice任务${taskId}] 使用字符数: ${message.payload?.usage?.characters || charCount}`);
+                                this.logger.log(`[Sambert任务${taskId}] 任务完成，耗时: ${useTime}ms`);
+                                this.logger.log(`[Sambert任务${taskId}] 任务完成详细信息: ${JSON.stringify(message.payload, null, 2)}`);
+                                this.logger.log(`[Sambert任务${taskId}] 使用字符数: ${message.payload?.usage?.characters || charCount}`);
 
                                 // 关闭文件流
                                 outputFileStream.end(() => {
-                                    this.logger.log(`[CosyVoice任务${taskId}] 音频文件写入完成，检查文件大小: ${fs.statSync(outputFilePath).size} 字节`);
-                                    this.logger.log(`[CosyVoice任务${taskId}] 准备上传到OSS`);
+                                    this.logger.log(`[Sambert任务${taskId}] 音频文件写入完成，检查文件大小: ${fs.statSync(outputFilePath).size} 字节`);
+                                    this.logger.log(`[Sambert任务${taskId}] 准备上传到OSS`);
 
                                     // 上传到OSS
                                     this.ossService.uploadFiles([{
-                                        fileName: `cosyvoice_${taskId}.${ttsParams.format}`,
+                                        fileName: `sambert_${taskId}.${ttsParams.format}`,
                                         filePath: outputFilePath
                                     }]).then(ossResults => {
                                         if (!ossResults || ossResults.length === 0) {
                                             throw new Error('上传音频到OSS返回了空结果');
                                         }
 
-                                        this.logger.log(`[CosyVoice任务${taskId}] 上传OSS成功: ${JSON.stringify(ossResults, null, 2)}`);
+                                        this.logger.log(`[Sambert任务${taskId}] 上传OSS成功: ${JSON.stringify(ossResults, null, 2)}`);
 
                                         // 更新任务记录
                                         const updateData = {
@@ -561,30 +543,30 @@ export class CosyvoiceAliyunService {
                                             }]
                                         };
                                         
-                                        this.logger.log(`[CosyVoice任务${taskId}] 更新任务记录: ${JSON.stringify(updateData, null, 2)}`);
+                                        this.logger.log(`[Sambert任务${taskId}] 更新任务记录: ${JSON.stringify(updateData, null, 2)}`);
                                         
                                         this.taskRecordsService.updateTaskRecord(updateData).then(() => {
-                                            this.logger.log(`[CosyVoice任务${taskId}] 任务记录更新成功`);
+                                            this.logger.log(`[Sambert任务${taskId}] 任务记录更新成功`);
 
                                             // 扣除用户点数
-                                            const pointsToDeduct = charCount * (ttsParams.format === 'mp3' ? 0.1 : 0.05);
-                                            this.logger.log(`[CosyVoice任务${taskId}] 准备扣除用户点数: ${pointsToDeduct}`);
+                                            const pointsToDeduct = (message.payload?.usage?.characters || charCount) * this.POINTS_PER_CHARACTER;
+                                            this.logger.log(`[Sambert任务${taskId}] 准备扣除用户点数: ${pointsToDeduct}`);
                                             
                                             this.sqlService.deductPointsWithCheck(user, pointsToDeduct)
                                                 .then((deductResult) => {
-                                                    this.logger.log(`[CosyVoice任务${taskId}] 用户点数扣除成功: ${JSON.stringify(deductResult, null, 2)}`);
+                                                    this.logger.log(`[Sambert任务${taskId}] 用户点数扣除成功: ${JSON.stringify(deductResult, null, 2)}`);
                                                 })
                                                 .catch(err => {
-                                                    this.logger.error(`[CosyVoice任务${taskId}] 扣除点数失败:`, err);
+                                                    this.logger.error(`[Sambert任务${taskId}] 扣除点数失败:`, err);
                                                 });
                                         }).catch(updateError => {
-                                            this.logger.error(`[CosyVoice任务${taskId}] 更新任务记录失败:`, updateError);
+                                            this.logger.error(`[Sambert任务${taskId}] 更新任务记录失败:`, updateError);
                                         });
 
                                         // 清理临时文件
                                         this.cleanupFiles(filesToCleanup);
                                     }).catch(error => {
-                                        this.logger.error(`[CosyVoice任务${taskId}] 上传到OSS失败:`, error);
+                                        this.logger.error(`[Sambert任务${taskId}] 上传到OSS失败:`, error);
                                         
                                         const failedData = {
                                             historyId,
@@ -596,7 +578,7 @@ export class CosyvoiceAliyunService {
                                             }]
                                         };
                                         
-                                        this.logger.log(`[CosyVoice任务${taskId}] 更新为失败状态: ${JSON.stringify(failedData, null, 2)}`);
+                                        this.logger.log(`[Sambert任务${taskId}] 更新为失败状态: ${JSON.stringify(failedData, null, 2)}`);
                                         
                                         this.taskRecordsService.updateTaskRecord(failedData);
                                         this.cleanupFiles(filesToCleanup);
@@ -606,10 +588,10 @@ export class CosyvoiceAliyunService {
 
                             case 'task-failed':
                                 taskFailed = true;
-                                this.logger.error(`[CosyVoice任务${taskId}] 任务失败:`);
-                                this.logger.error(`[CosyVoice任务${taskId}] 错误代码: ${message.header.error_code}`);
-                                this.logger.error(`[CosyVoice任务${taskId}] 错误消息: ${message.header.error_message}`);
-                                this.logger.error(`[CosyVoice任务${taskId}] 完整错误详情: ${JSON.stringify(message, null, 2)}`);
+                                this.logger.error(`[Sambert任务${taskId}] 任务失败:`);
+                                this.logger.error(`[Sambert任务${taskId}] 错误代码: ${message.header.error_code}`);
+                                this.logger.error(`[Sambert任务${taskId}] 错误消息: ${message.header.error_message}`);
+                                this.logger.error(`[Sambert任务${taskId}] 完整错误详情: ${JSON.stringify(message, null, 2)}`);
 
                                 // 更新任务记录
                                 const failData = {
@@ -622,7 +604,7 @@ export class CosyvoiceAliyunService {
                                     }]
                                 };
                                 
-                                this.logger.log(`[CosyVoice任务${taskId}] 更新为失败状态: ${JSON.stringify(failData, null, 2)}`);
+                                this.logger.log(`[Sambert任务${taskId}] 更新为失败状态: ${JSON.stringify(failData, null, 2)}`);
                                 
                                 await this.taskRecordsService.updateTaskRecord(failData);
 
@@ -632,45 +614,45 @@ export class CosyvoiceAliyunService {
                                 // 关闭WebSocket连接
                                 if (ws.readyState === WebSocket.OPEN) {
                                     ws.close();
-                                    this.logger.log(`[CosyVoice任务${taskId}] WebSocket连接已主动关闭`);
+                                    this.logger.log(`[Sambert任务${taskId}] WebSocket连接已主动关闭`);
                                 }
                                 break;
 
                             default:
-                                this.logger.log(`[CosyVoice任务${taskId}] 收到其他事件: ${message.header.event}`);
-                                this.logger.log(`[CosyVoice任务${taskId}] 完整消息: ${JSON.stringify(message, null, 2)}`);
+                                this.logger.log(`[Sambert任务${taskId}] 收到其他事件: ${message.header.event}`);
+                                this.logger.log(`[Sambert任务${taskId}] 完整消息: ${JSON.stringify(message, null, 2)}`);
                                 break;
                         }
                     } else if (dataBuffer) {
                         // 确认为二进制音频数据
-                        this.logger.log(`[CosyVoice任务${taskId}] 处理二进制音频数据，大小: ${dataBuffer.length} 字节`);
+                        this.logger.log(`[Sambert任务${taskId}] 处理二进制音频数据，大小: ${dataBuffer.length} 字节`);
                         if (!audioDataReceived) {
                             audioDataReceived = true;
-                            this.logger.log(`[CosyVoice任务${taskId}] 收到第一块音频数据，大小: ${dataBuffer.length} 字节`);
+                            this.logger.log(`[Sambert任务${taskId}] 收到第一块音频数据，大小: ${dataBuffer.length} 字节`);
                         }
                         outputFileStream.write(dataBuffer);
                     } else {
                         // 无法处理的数据类型
-                        this.logger.warn(`[CosyVoice任务${taskId}] 收到无法处理的数据类型: ${typeof data}`);
+                        this.logger.warn(`[Sambert任务${taskId}] 收到无法处理的数据类型: ${typeof data}`);
                     }
                 } catch (error) {
-                    this.logger.error(`[CosyVoice任务${taskId}] 处理WebSocket消息出错:`, error);
-                    this.logger.error(`[CosyVoice任务${taskId}] 错误堆栈: ${error.stack}`);
+                    this.logger.error(`[Sambert任务${taskId}] 处理WebSocket消息出错:`, error);
+                    this.logger.error(`[Sambert任务${taskId}] 错误堆栈: ${error.stack}`);
                     
                     // 尝试记录数据信息便于调试
                     try {
                         if (Buffer.isBuffer(data)) {
-                            this.logger.error(`[CosyVoice任务${taskId}] 错误发生在处理Buffer数据，长度: ${data.length} 字节`);
+                            this.logger.error(`[Sambert任务${taskId}] 错误发生在处理Buffer数据，长度: ${data.length} 字节`);
                         } else if (data instanceof ArrayBuffer) {
-                            this.logger.error(`[CosyVoice任务${taskId}] 错误发生在处理ArrayBuffer数据，长度: ${data.byteLength} 字节`);
+                            this.logger.error(`[Sambert任务${taskId}] 错误发生在处理ArrayBuffer数据，长度: ${data.byteLength} 字节`);
                         } else if (typeof data === 'string') {
                             const dataStr = data as string; // 确保类型为字符串
-                            this.logger.error(`[CosyVoice任务${taskId}] 错误发生在处理字符串数据，内容: ${dataStr.substring(0, 100)}${dataStr.length > 100 ? '...(已截断)' : ''}`);
+                            this.logger.error(`[Sambert任务${taskId}] 错误发生在处理字符串数据，内容: ${dataStr.substring(0, 100)}${dataStr.length > 100 ? '...(已截断)' : ''}`);
                         } else {
-                            this.logger.error(`[CosyVoice任务${taskId}] 错误发生在处理未知类型数据: ${typeof data}`);
+                            this.logger.error(`[Sambert任务${taskId}] 错误发生在处理未知类型数据: ${typeof data}`);
                         }
                     } catch (logError) {
-                        this.logger.error(`[CosyVoice任务${taskId}] 记录错误数据信息时出错:`, logError);
+                        this.logger.error(`[Sambert任务${taskId}] 记录错误数据信息时出错:`, logError);
                     }
 
                     if (!taskFailed) {
@@ -684,7 +666,7 @@ export class CosyvoiceAliyunService {
                             }]
                         };
                         
-                        this.logger.log(`[CosyVoice任务${taskId}] 更新为失败状态: ${JSON.stringify(errorData, null, 2)}`);
+                        this.logger.log(`[Sambert任务${taskId}] 更新为失败状态: ${JSON.stringify(errorData, null, 2)}`);
                         
                         await this.taskRecordsService.updateTaskRecord(errorData);
                         
@@ -697,15 +679,15 @@ export class CosyvoiceAliyunService {
                     // 关闭WebSocket连接
                     if (ws.readyState === WebSocket.OPEN) {
                         ws.close();
-                        this.logger.log(`[CosyVoice任务${taskId}] WebSocket连接已主动关闭 (出错后关闭)`);
+                        this.logger.log(`[Sambert任务${taskId}] WebSocket连接已主动关闭 (出错后关闭)`);
                     }
                 }
             });
 
             // 处理WebSocket错误
             ws.on('error', async (error) => {
-                this.logger.error(`[CosyVoice任务${taskId}] WebSocket错误:`, error);
-                this.logger.error(`[CosyVoice任务${taskId}] 错误堆栈: ${error.stack}`);
+                this.logger.error(`[Sambert任务${taskId}] WebSocket错误:`, error);
+                this.logger.error(`[Sambert任务${taskId}] 错误堆栈: ${error.stack}`);
 
                 if (!taskFailed) {
                     const errorData = {
@@ -718,7 +700,7 @@ export class CosyvoiceAliyunService {
                         }]
                     };
                     
-                    this.logger.log(`[CosyVoice任务${taskId}] 更新为失败状态 (WebSocket错误): ${JSON.stringify(errorData, null, 2)}`);
+                    this.logger.log(`[Sambert任务${taskId}] 更新为失败状态 (WebSocket错误): ${JSON.stringify(errorData, null, 2)}`);
                     
                     await this.taskRecordsService.updateTaskRecord(errorData);
                     
@@ -731,14 +713,14 @@ export class CosyvoiceAliyunService {
                 // 关闭文件流
                 if (outputFileStream) {
                     outputFileStream.end(() => {
-                        this.logger.log(`[CosyVoice任务${taskId}] 音频文件流已关闭 (WebSocket错误)`);
+                        this.logger.log(`[Sambert任务${taskId}] 音频文件流已关闭 (WebSocket错误)`);
                     });
                 }
             });
 
             // 处理WebSocket关闭
             ws.on('close', (code, reason) => {
-                this.logger.log(`[CosyVoice任务${taskId}] WebSocket连接关闭: 代码=${code}, 原因=${reason || '未提供'}`);
+                this.logger.log(`[Sambert任务${taskId}] WebSocket连接关闭: 代码=${code}, 原因=${reason || '未提供'}`);
 
                 // 如果任务既没有失败也没有完成，标记为失败
                 if (!taskFailed && !taskStarted) {
@@ -752,7 +734,7 @@ export class CosyvoiceAliyunService {
                         }]
                     };
                     
-                    this.logger.log(`[CosyVoice任务${taskId}] 更新为失败状态 (WebSocket关闭): ${JSON.stringify(closeData, null, 2)}`);
+                    this.logger.log(`[Sambert任务${taskId}] 更新为失败状态 (WebSocket关闭): ${JSON.stringify(closeData, null, 2)}`);
                     
                     this.taskRecordsService.updateTaskRecord(closeData);
                 }
@@ -760,21 +742,21 @@ export class CosyvoiceAliyunService {
                 // 关闭文件流
                 if (outputFileStream) {
                     outputFileStream.end(() => {
-                        this.logger.log(`[CosyVoice任务${taskId}] 音频文件流已关闭 (WebSocket关闭)`);
+                        this.logger.log(`[Sambert任务${taskId}] 音频文件流已关闭 (WebSocket关闭)`);
                         
                         // 检查文件是否存在再进行操作
                         if (fs.existsSync(outputFilePath)) {
                             try {
                                 const stats = fs.statSync(outputFilePath);
-                                this.logger.log(`[CosyVoice任务${taskId}] 音频文件大小: ${stats.size} 字节`);
+                                this.logger.log(`[Sambert任务${taskId}] 音频文件大小: ${stats.size} 字节`);
                                 if (stats.size === 0) {
-                                    this.logger.warn(`[CosyVoice任务${taskId}] 警告: 生成的音频文件为空`);
+                                    this.logger.warn(`[Sambert任务${taskId}] 警告: 生成的音频文件为空`);
                                 }
                             } catch (err) {
-                                this.logger.error(`[CosyVoice任务${taskId}] 检查音频文件失败:`, err);
+                                this.logger.error(`[Sambert任务${taskId}] 检查音频文件失败:`, err);
                             }
                         } else {
-                            this.logger.log(`[CosyVoice任务${taskId}] 音频文件已被删除，跳过检查`);
+                            this.logger.log(`[Sambert任务${taskId}] 音频文件已被删除，跳过检查`);
                         }
                     });
                 }
@@ -783,7 +765,7 @@ export class CosyvoiceAliyunService {
             // 设置超时处理
             setTimeout(async () => {
                 if (!taskFailed && ws.readyState === WebSocket.OPEN) {
-                    this.logger.warn(`[CosyVoice任务${taskId}] 任务执行超时 (2分钟)`);
+                    this.logger.warn(`[Sambert任务${taskId}] 任务执行超时 (2分钟)`);
 
                     // 更新任务记录
                     const timeoutData = {
@@ -795,7 +777,7 @@ export class CosyvoiceAliyunService {
                         }]
                     };
                     
-                    this.logger.log(`[CosyVoice任务${taskId}] 更新为失败状态 (超时): ${JSON.stringify(timeoutData, null, 2)}`);
+                    this.logger.log(`[Sambert任务${taskId}] 更新为失败状态 (超时): ${JSON.stringify(timeoutData, null, 2)}`);
                     
                     await this.taskRecordsService.updateTaskRecord(timeoutData);
 
@@ -804,12 +786,12 @@ export class CosyvoiceAliyunService {
 
                     // 关闭WebSocket连接
                     ws.close();
-                    this.logger.log(`[CosyVoice任务${taskId}] WebSocket连接已主动关闭 (超时)`);
+                    this.logger.log(`[Sambert任务${taskId}] WebSocket连接已主动关闭 (超时)`);
                 }
             }, 120000); // 2分钟超时
         } catch (error) {
-            this.logger.error(`[CosyVoice任务${taskId}] 启动WebSocket任务失败:`, error);
-            this.logger.error(`[CosyVoice任务${taskId}] 错误堆栈: ${error.stack}`);
+            this.logger.error(`[Sambert任务${taskId}] 启动WebSocket任务失败:`, error);
+            this.logger.error(`[Sambert任务${taskId}] 错误堆栈: ${error.stack}`);
 
             // 更新任务记录
             const startErrorData = {
@@ -822,7 +804,7 @@ export class CosyvoiceAliyunService {
                 }]
             };
             
-            this.logger.log(`[CosyVoice任务${taskId}] 更新为失败状态 (启动失败): ${JSON.stringify(startErrorData, null, 2)}`);
+            this.logger.log(`[Sambert任务${taskId}] 更新为失败状态 (启动失败): ${JSON.stringify(startErrorData, null, 2)}`);
             
             await this.taskRecordsService.updateTaskRecord(startErrorData);
 
@@ -832,13 +814,13 @@ export class CosyvoiceAliyunService {
             // 关闭WebSocket连接
             if (ws && ws.readyState === WebSocket.OPEN) {
                 ws.close();
-                this.logger.log(`[CosyVoice任务${taskId}] WebSocket连接已主动关闭 (启动失败)`);
+                this.logger.log(`[Sambert任务${taskId}] WebSocket连接已主动关闭 (启动失败)`);
             }
 
             // 关闭文件流
             if (outputFileStream) {
                 outputFileStream.end(() => {
-                    this.logger.log(`[CosyVoice任务${taskId}] 音频文件流已关闭 (启动失败)`);
+                    this.logger.log(`[Sambert任务${taskId}] 音频文件流已关闭 (启动失败)`);
                 });
             }
         }
@@ -869,114 +851,19 @@ export class CosyvoiceAliyunService {
     }
 
     // 获取支持的语音列表
-    async getVoiceList(userId?: number): Promise<any> {
-        this.logger.log(`获取语音列表，用户ID: ${userId || '未登录'}`);
+    async getVoiceList(): Promise<any> {
+        this.logger.log(`获取语音列表`);
         
         // 获取默认音色列表
         const systemVoices = defaultVoices;
         
-        let finalVoiceList = [...systemVoices];
-        
-        // 如果提供了用户ID，获取用户的自定义音色
-        if (userId) {
-            try {
-                const userVoicesResult = await this.voiceCloneService.getUserVoices(userId);
-                
-                if (userVoicesResult.isSuccess && userVoicesResult.data && userVoicesResult.data.length > 0) {
-                    const userVoices = userVoicesResult.data.map(voice => {
-                        return {
-                            id: voice.ClonedVoiceId,
-                            name: voice.ClonedVoiceName,
-                            gender: 'unknown', // 可以在克隆音色表中添加性别字段
-                            description: '用户自定义音色',
-                            sample_url: '', // 可以提供一个试听接口URL
-                            model: 'cosyvoice-v1',
-                            scenarios: ['语音助手', '聊天数字人', '自定义应用'],
-                            language: '中文',
-                            default_sample_rate: 22050,
-                            default_format: 'mp3',
-                            is_custom: true,
-                            create_time: voice.ClonedVoiceCreateTime,
-                            update_time: voice.ClonedVoiceUpdateTime
-                        };
-                    });
-                    
-                    // 将用户自定义音色放在列表前面（置顶）
-                    finalVoiceList = [...userVoices, ...systemVoices];
-                    
-                    this.logger.log(`找到${userVoices.length}个用户自定义音色`);
-                }
-            } catch (error) {
-                this.logger.error(`获取用户自定义音色失败:`, error);
-                // 即使获取用户音色失败，仍返回默认音色列表
-            }
-        }
-        
-        this.logger.log(`返回${finalVoiceList.length}个音色列表`);
+        this.logger.log(`返回${systemVoices.length}个音色列表`);
 
         return {
             isSuccess: true,
             message: '获取语音列表成功',
-            data: finalVoiceList
+            data: systemVoices
         };
-    }
-
-    // 只获取用户的个人音色列表
-    async getUserVoices(userId: number): Promise<any> {
-        this.logger.log(`获取个人音色列表，用户ID: ${userId}`);
-        
-        if (!userId) {
-            return {
-                isSuccess: false,
-                message: '用户ID不能为空',
-                data: []
-            };
-        }
-        
-        try {
-            const userVoicesResult = await this.voiceCloneService.getUserVoices(userId);
-            
-            if (userVoicesResult.isSuccess && userVoicesResult.data && userVoicesResult.data.length > 0) {
-                const userVoices = userVoicesResult.data.map(voice => {
-                    return {
-                        id: voice.ClonedVoiceId,
-                        name: voice.ClonedVoiceName,
-                        gender: 'unknown',
-                        description: '用户自定义音色',
-                        sample_url: '',
-                        model: 'cosyvoice-v1',
-                        scenarios: ['语音助手', '聊天数字人', '自定义应用'],
-                        language: '中文',
-                        default_sample_rate: 22050,
-                        default_format: 'mp3',
-                        is_custom: true,
-                        create_time: voice.ClonedVoiceCreateTime,
-                        update_time: voice.ClonedVoiceUpdateTime
-                    };
-                });
-                
-                this.logger.log(`找到${userVoices.length}个用户自定义音色`);
-                
-                return {
-                    isSuccess: true,
-                    message: '获取个人音色列表成功',
-                    data: userVoices
-                };
-            } else {
-                return {
-                    isSuccess: true,
-                    message: '用户没有自定义音色',
-                    data: []
-                };
-            }
-        } catch (error) {
-            this.logger.error(`获取用户自定义音色失败:`, error);
-            return {
-                isSuccess: false,
-                message: `获取个人音色列表失败: ${error.message}`,
-                data: []
-            };
-        }
     }
 
     // 执行批量语音合成任务
@@ -1263,10 +1150,12 @@ export class CosyvoiceAliyunService {
             text_type: 'PlainText',
             voice: item.voice || this.DEFAULT_VOICE,
             format: item.format || 'mp3',
-            sample_rate: item.sample_rate || 22050,
+            sample_rate: item.sample_rate || 16000,
             volume: item.volume !== undefined ? item.volume : 50,
             rate: item.rate !== undefined ? item.rate : 1,
-            pitch: item.pitch !== undefined ? item.pitch : 1
+            pitch: item.pitch !== undefined ? item.pitch : 1,
+            word_timestamp_enabled: item.word_timestamp_enabled || false,
+            phoneme_timestamp_enabled: item.phoneme_timestamp_enabled || false
         };
         
         const outputFilePath = path.join(this.TEMP_DIR, `${taskId}.${ttsParams.format}`);
@@ -1294,15 +1183,26 @@ export class CosyvoiceAliyunService {
                         header: {
                             action: 'run-task',
                             task_id: taskId,
-                            streaming: 'duplex'
+                            streaming: 'out'
                         },
                         payload: {
+                            model: ttsParams.voice,
                             task_group: 'audio',
                             task: 'tts',
                             function: 'SpeechSynthesizer',
-                            model: 'cosyvoice-v1',
-                            parameters: ttsParams,                   
-                            input: {}
+                            input: {
+                                text: item.text
+                            },
+                            parameters: {
+                                text_type: ttsParams.text_type,
+                                format: ttsParams.format,
+                                sample_rate: ttsParams.sample_rate,
+                                volume: ttsParams.volume,
+                                rate: ttsParams.rate,
+                                pitch: ttsParams.pitch,
+                                word_timestamp_enabled: ttsParams.word_timestamp_enabled,
+                                phoneme_timestamp_enabled: ttsParams.phoneme_timestamp_enabled
+                            }
                         }
                     };
                     
@@ -1311,7 +1211,6 @@ export class CosyvoiceAliyunService {
                 
                 // 处理消息
                 ws.on('message', async (data) => {
-                    // console.log('data', data);
                     try {
                         // 尝试解析为JSON文本消息
                         let isTextMessage = false;
@@ -1367,40 +1266,10 @@ export class CosyvoiceAliyunService {
                             switch (message.header.event) {
                                 case 'task-started':
                                     taskStarted = true;
+                                    break;
                                     
-                                    // 发送continue-task指令
-                                    const continueTaskMessage: WebSocketMessage = {
-                                        header: {
-                                            action: 'continue-task',
-                                            task_id: taskId,
-                                            streaming: 'duplex'
-                                        },
-                                        payload: {
-                                            input: {
-                                                text: item.text
-                                            }
-                                        }
-                                    };
-                                    
-                                    ws.send(JSON.stringify(continueTaskMessage));
-                                    
-                                    // 发送finish-task指令
-                                    setTimeout(() => {
-                                        if (ws.readyState === WebSocket.OPEN) {
-                                            const finishTaskMessage: WebSocketMessage = {
-                                                header: {
-                                                    action: 'finish-task',
-                                                    task_id: taskId,
-                                                    streaming: 'duplex'
-                                                },
-                                                payload: {
-                                                    input: {}
-                                                }
-                                            };
-                                            
-                                            ws.send(JSON.stringify(finishTaskMessage));
-                                        }
-                                    }, 1000); // 等待1秒后发送结束指令
+                                case 'result-generated':
+                                    // 处理时间戳等信息，如果需要
                                     break;
 
                                 case 'task-finished':
@@ -1409,7 +1278,7 @@ export class CosyvoiceAliyunService {
                                         // 上传到OSS
                                         try {
                                             const ossResults = await this.ossService.uploadFiles([{
-                                                fileName: `cosyvoice_${taskId}.${ttsParams.format}`,
+                                                fileName: `sambert_${taskId}.${ttsParams.format}`,
                                                 filePath: outputFilePath
                                             }]);
                                             
@@ -1469,6 +1338,7 @@ export class CosyvoiceAliyunService {
                                     break;
 
                                 default:
+                                    // 处理其他事件
                                     break;
                             }
                         } else if (dataBuffer) {
